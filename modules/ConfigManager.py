@@ -31,7 +31,7 @@ class ConfigManager:
                 except JSONDecodeError as error:
                     logging.error(f"Unable to parse config file, error:\n {error.msg}")
         else:
-            logging.error("Unable to locate config file because it do not exists or it is not a json file!")
+            logging.error("Unable to locate config file because it do not exists or it is not a json file!\nAdd json file or add env varibles to docker.")
         return None
 
     def load_config(self, config: ConfigFile) -> None:
