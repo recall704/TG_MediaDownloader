@@ -96,10 +96,37 @@ The bot can be executed inside a Docker container or directly on your PC/Server 
 
 <details>
       <summary>Docker</summary>
-        To dockerize the bot, just pull or build the image and provide the required parameters.<br/><br>
+        To dockerize the bot, just pull or build the image and provide the required parameters.<br><br>
         An official GitHub Package is
-        available <a href="https://github.com/LightDestory/TG_MediaDownloader/pkgs/container/        tg_mediadownloader">here</a>.<br/><br/>
+        available <a href="https://github.com/LightDestory/TG_MediaDownloader/pkgs/container/tg_mediadownloader">here</a>.<br><br>
         <i>Make sure that the download path is a mounted as a volume to allow the host system to access the downloaded files.</i>
+        
+</details>
+
+<details>
+   <summary>Docker compose</summary>
+
+With docker compose the bot can quickly be set up in a container using <a href="https://github.com/LightDestory/TG_MediaDownloader/pkgs/container/tg_mediadownloader">the official docker image.</a><br>
+Just add a `compose.yaml` file with these contents into a fresh directory:<br>
+```
+services:
+  tg_mediadownloader:
+    image: "ghcr.io/lightdestory/tg_mediadownloader:master"
+    container_name: TelegramMediaDownloaderBot
+    volumes:
+      - /absolute/path/on/Host:/absolute/virtual_path
+    environment:
+      TG_API_ID: your_tg_api_id
+      TG_API_HASH: "your_tg_api_hash"
+      TG_BOT_TOKEN: "your_tg_bot_token"
+      TG_MAX_PARALLEL: 2
+      TG_DL_TIMEOUT: 5400
+      TG_DOWNLOAD_PATH: "/absolute/virtual_path/existing_dir"
+      TG_AUTHORIZED_USER_ID: your_tg_user_id
+    restart: unless-stopped
+```
+Swap in your credentials from the step above.<br>
+Make sure that the path for the volume is fully existing and you have access. <b>The directory used as download destination needs to exist,</b> both now and when changing during runtime. (Use a short virtual path, you will have to set absolute paths when changing download directories.)<b/>
 </details>
 
 <details>
