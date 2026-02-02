@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime
 from asyncio import Task, Queue
 from pathlib import Path
 import pyroaddon
@@ -101,6 +102,27 @@ def get_command_list() -> list[BotCommand]:
     ]
 
 
+def format_duration(seconds: float) -> str:
+    """
+    This function formats a duration in seconds to a human-readable format
+    :param seconds: Duration in seconds
+    :return: A human-readable string (e.g., "2h 15m 30s", "45s", "5m 20s")
+    """
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+
+    parts = []
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if secs > 0 or not parts:
+        parts.append(f"{secs}s")
+
+    return " ".join(parts)
+
+
 def get_extension(media_type: MessageMediaType, media: Photo | Voice | Video | Animation | Audio | Document) -> str:
     """
     This function returns the most probable file extension based on the media type
@@ -164,14 +186,20 @@ async def worker() -> None:
         file_name: str = queue_item[2]
         file_path = os.path.join(config_manager.get_config().TG_DOWNLOAD_PATH, file_name)
         try:
+            start_time = time.time()
             logging.info(f'{file_name} - Download started')
             reply = await reply.edit('Downloading:  0%')
             task = asyncio.get_event_loop().create_task(
                 message.download(file_path, progress=worker_progress, progress_args=([reply],)))
             tasks.append(task)
             await asyncio.wait_for(task, timeout=config_manager.get_config().TG_DL_TIMEOUT)
-            logging.info(f'{file_name} - Successfully downloaded')
-            await reply.edit(f'Finished at {time.strftime("%H:%M", time.localtime())}')
+            end_time = time.time()
+            duration = end_time - start_time
+            duration_str = format_duration(duration)
+            logging.info(f'{file_name} - Successfully downloaded (duration: {duration_str})')
+            # Use configured timezone for finish time display
+            finish_time = time.strftime("%H:%M", time.localtime())
+            await reply.edit(f'Finished at {finish_time}\nDuration: {duration_str}')
         except MessageNotModified:
             pass
         except asyncio.CancelledError:

@@ -3,6 +3,11 @@ tg_downloader.session*
 tg_downloader.log
 .vscode/
 venv/
+.venv/
 config.json
 temp/
 **/__pycache__/**
+
+
+# AI
+AGENTS.md
