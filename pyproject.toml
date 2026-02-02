@@ -1,0 +1,13 @@
+[project]
+name = "tg-mediadownloader"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pyaes==1.6.1",
+    "pyroaddon==1.0.6",
+    "pyrogram==2.0.106",
+    "pysocks==1.7.1",
+    "tgcrypto==1.2.5",
+]

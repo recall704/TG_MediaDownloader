@@ -1,0 +1,67 @@
+version = 1
+revision = 2
+requires-python = ">=3.12"
+
+[[package]]
+name = "pyaes"
+version = "1.6.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/66/2c17bae31c906613795711fc78045c285048168919ace2220daa372c7d72/pyaes-1.6.1.tar.gz", hash = "sha256:02c1b1405c38d3c370b085fb952dd8bea3fadcee6411ad99f312cc129c536d8f", size = 28536, upload-time = "2017-09-20T21:17:54.23Z" }
+
+[[package]]
+name = "pyroaddon"
+version = "1.0.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ec/d4/57de40267b7117d646cd5a1b2d366ea6ad4bb26ee84edf7c246e8d6ca580/pyroaddon-1.0.6.tar.gz", hash = "sha256:1ba1dc0687cb66fdfb529b60cc41a484aed9c783201a1283a0867bb28019f889", size = 22471, upload-time = "2022-03-24T13:09:15.298Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b0/ec/179c84f1cad868f913aaa4adb466decd9101d84130200d3826f3cdad0be1/pyroaddon-1.0.6-py3-none-any.whl", hash = "sha256:4b0f6b75e76caac4a108f56d9ffae9bfe0a09443fa04bee7c1331e3d3f50266b", size = 26782, upload-time = "2022-03-24T13:09:13.671Z" },
+]
+
+[[package]]
+name = "pyrogram"
+version = "2.0.106"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyaes" },
+    { name = "pysocks" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c8/8e/5d09eca17271320bb9a95e50b7e053770aee85b3fd338e8267e7b6b280ae/Pyrogram-2.0.106.tar.gz", hash = "sha256:30202995758fcb6e0f91224704ab7fedefea454297724bd70a6a71a23748c16f", size = 345997, upload-time = "2023-04-30T18:24:45.506Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/88/502ec24914d208e06baa6f27ff812f46815bb4f302018ad848ebf518abdf/Pyrogram-2.0.106-py3-none-any.whl", hash = "sha256:32b62b3d93030b1080cbe45b88c0e8790cf4e2179cf3321ede810d48edf97bc7", size = 3573685, upload-time = "2023-04-30T18:24:41.986Z" },
+]
+
+[[package]]
+name = "pysocks"
+version = "1.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/11/293dd436aea955d45fc4e8a35b6ae7270f5b8e00b53cf6c024c83b657a11/PySocks-1.7.1.tar.gz", hash = "sha256:3f8804571ebe159c380ac6de37643bb4685970655d3bba243530d6558b799aa0", size = 284429, upload-time = "2019-09-20T02:07:35.714Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/59/b4572118e098ac8e46e399a1dd0f2d85403ce8bbaad9ec79373ed6badaf9/PySocks-1.7.1-py3-none-any.whl", hash = "sha256:2725bd0a9925919b9b51739eea5f9e2bae91e83288108a9ad338b2e3a4435ee5", size = 16725, upload-time = "2019-09-20T02:06:22.938Z" },
+]
+
+[[package]]
+name = "tg-mediadownloader"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "pyaes" },
+    { name = "pyroaddon" },
+    { name = "pyrogram" },
+    { name = "pysocks" },
+    { name = "tgcrypto" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pyaes", specifier = "==1.6.1" },
+    { name = "pyroaddon", specifier = "==1.0.6" },
+    { name = "pyrogram", specifier = "==2.0.106" },
+    { name = "pysocks", specifier = "==1.7.1" },
+    { name = "tgcrypto", specifier = "==1.2.5" },
+]
+
+[[package]]
+name = "tgcrypto"
+version = "1.2.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/33/59/7cf5ced989e3139a791d5452d58cb8994de589576b80f9267ba76d794f6c/TgCrypto-1.2.5.tar.gz", hash = "sha256:9bc2cac6fb9a12ef5b08f3dd500174fe374d89b660cce981f57e3138559cb682", size = 37280, upload-time = "2022-11-11T19:55:11.436Z" }
