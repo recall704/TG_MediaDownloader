@@ -31,6 +31,8 @@ tg_downloader.session*
 tg_downloader.log
 config.json
 temp/
+.ruff_cache
+.env
 
 # AI
 AGENTS.md

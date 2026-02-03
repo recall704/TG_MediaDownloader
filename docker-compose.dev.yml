@@ -1,0 +1,23 @@
+services:
+  tg_mediadownloader_dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: TelegramMediaDownloaderBot_Dev
+    network_mode: host
+    volumes:
+      - .:/app
+      - /mnt/data/media/videos/tg_downloads:/downloads
+    environment:
+      TG_API_ID: 32709062
+      TG_API_HASH: "44430b27c98bb021e0a9470e778f9c69"
+      TG_BOT_TOKEN: "7017511746:AAG0BURyTio_ucIQMcGHQbgMfJKG9Pt-S_0"
+      TG_MAX_PARALLEL: 2
+      TG_DL_TIMEOUT: 14400
+      TG_DOWNLOAD_PATH: "/downloads"
+      TG_AUTHORIZED_USER_ID: 157000687
+      TG_SESSION: "tg_downloader"
+      TZ: "Asia/Shanghai"
+      PYTHONPATH: "/app"
+    restart: unless-stopped
+    command: ["uv", "run", "python", "/app/tg_downloader.py"]
