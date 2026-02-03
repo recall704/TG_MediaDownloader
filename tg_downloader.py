@@ -97,6 +97,7 @@ async def main() -> None:
                 commands=get_command_list(),
             )
         )
+        logging.info("Bot is running... =================================")
         await idle()
         logging.info("Bot is stopping...")
         await app.stop()
