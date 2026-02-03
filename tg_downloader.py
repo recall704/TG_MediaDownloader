@@ -435,15 +435,22 @@ async def greenvideo_progress_callback(
         total_files = file_info.get("total_files", 1)
         filename = file_info.get("filename", "unknown")
 
-        # 每 5% 更新一次消息，避免频繁更新
-        if progress % 5 == 0 and str(progress) not in reply_message.text:
+        # 获取上次更新时间，默认为 0
+        last_update = file_info.get("last_update_time", 0)
+        current_time = time.time()
+
+        # 每 10 秒更新一次，或下载完成时强制更新
+        if current_time - last_update >= 10 or progress == 100:
             try:
+                update_time_str = time.strftime("%H:%M:%S", time.localtime(current_time))
                 await reply_message.edit(
                     f"📥 下载中...\n"
                     f"文件: {filename}\n"
                     f"进度: {current_file}/{total_files} - {progress}%\n"
-                    f"大小: {current}/{total} bytes"
+                    f"大小: {current}/{total} bytes\n"
+                    f"上次更新: {update_time_str}"
                 )
+                file_info["last_update_time"] = current_time
             except MessageNotModified:
                 pass
 
