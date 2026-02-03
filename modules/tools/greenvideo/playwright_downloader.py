@@ -193,17 +193,36 @@ class PlaywrightGreenVideoDownloader:
         # 默认返回 .mp4
         return ".mp4"
 
-    def _sanitize_filename(self, filename):
-        """清理文件名，移除非法字符"""
+    def _sanitize_filename(self, filename, max_length=255):
+        """
+        清理文件名，移除非法字符，确保不超过指定长度
+
+        Args:
+            filename: 原始文件名（不包括扩展名）
+            max_length: 文件名的最大字节长度（默认255）
+
+        Returns:
+            tuple: (safe_filename_bytes, truncated) - 安全的文件名（字节），是否被截断
+        """
         # 移除或替换非法字符
         illegal_chars = r'[<>:"/\\|?*]'
         filename = re.sub(illegal_chars, "_", filename)
         # 移除首尾空格和点
         filename = filename.strip(". ")
-        # 限制文件名长度
-        if len(filename) > 200:
-            filename = filename[:200]
-        return filename
+
+        # 检查是否需要截断
+        name_part_bytes = len(filename.encode('utf-8'))
+        truncated = name_part_bytes > max_length
+
+        # 截短文件名
+        while len(filename.encode('utf-8')) > max_length:
+            filename = filename[:-1]
+
+        # 确保文件名不为空
+        if not filename:
+            filename = "video"
+
+        return filename.encode('utf-8'), truncated
 
     async def download_video(
         self, result, download_dir, download_timeout=300, progress_callback=None
@@ -227,22 +246,65 @@ class PlaywrightGreenVideoDownloader:
         download_path = Path(download_dir)
         download_path.mkdir(parents=True, exist_ok=True)
 
+        # 计算目录路径的字节长度（用于限制完整路径）
+        dir_path_str = str(download_path)
+        dir_bytes = len(dir_path_str.encode('utf-8')) + 1  # +1 for path separator
+
         downloaded_files = []
 
         for i, download in enumerate(result["downloads"], 1):
             url = download["url"]
             title = result.get("title", f"video_{i}")
 
-            # 清理文件名并添加扩展名
-            safe_title = self._sanitize_filename(title)
+            # 计算可用字节数：系统限制 - 目录路径长度
+            # Linux 系统路径限制通常为 4096 字节，但文件名通常限制为 255 字节（ext4）
+            max_filename_bytes = min(255, 4096 - dir_bytes)
+
+            # 获取扩展名
             ext = self._get_file_extension(url)
-            filename = f"{safe_title}{ext}"
+            ext_bytes_len = len(ext.encode('utf-8'))
+
+            # 计算文件名部分可用的最大字节数
+            max_name_bytes = max_filename_bytes - ext_bytes_len
+
+            if max_name_bytes < 10:
+                max_name_bytes = 10
+                ext = ext[:max_filename_bytes - 10]
+
+            # 清理并截断文件名（不包括扩展名）
+            safe_name_bytes, name_truncated = self._sanitize_filename(title, max_name_bytes)
+
+            # 组合文件名和扩展名
+            final_filename_bytes = safe_name_bytes + ext.encode('utf-8')
+
+            # 二次检查：如果仍然超限，继续截断
+            truncated = name_truncated
+            while len(final_filename_bytes) > max_filename_bytes and len(safe_name_bytes) > 10:
+                safe_name_bytes = safe_name_bytes[:-1]
+                final_filename_bytes = safe_name_bytes + ext.encode('utf-8')
+                truncated = True
+
+            # 如果还是不行，使用时间戳
+            if len(final_filename_bytes) > max_filename_bytes:
+                import time
+                timestamp = str(int(time.time()))
+                safe_name_bytes = f"video_{timestamp}".encode('utf-8')
+                final_filename_bytes = safe_name_bytes + ext.encode('utf-8')
+                logging.error(f"  文件名过长，使用时间戳代替")
+
+            safe_filename = safe_name_bytes.decode('utf-8')
+
+            if truncated:
+                logging.warning(f"文件名过长已截断（{len(safe_name_bytes)}字节）: {title[:50]}...")
+
+            filename = safe_filename + ext
             filepath = download_path / filename
 
             logging.info(f"正在下载视频 {i}/{len(result['downloads'])}")
             logging.warning(f'{result['downloads']}')
             logging.info(f"  URL: {url}")
             logging.info(f"  保存到: {filepath}")
+            logging.debug(f"  文件名长度: {len(final_filename_bytes)} 字节")
 
             # 准备文件信息用于进度回调
             file_info = {
@@ -291,6 +353,12 @@ class PlaywrightGreenVideoDownloader:
 
             except requests.exceptions.RequestException as e:
                 logging.error(f"  ❌ 下载失败: {e}")
+            except OSError as e:
+                if e.errno == 36 or "too long" in str(e).lower():
+                    logging.error(f"  ❌ 文件名仍然过长: {e}")
+                    logging.error(f"     文件名长度: {len((dir_path_str + '/' + filename).encode('utf-8'))} 字节")
+                else:
+                    logging.error(f"  ❌ 文件系统错误: {e}")
             except Exception as e:
                 logging.error(f"  ❌ 下载失败: {e}")
 
@@ -391,9 +459,7 @@ async def main():
     if args.download_dir:
         # 下载模式
         if result:
-            downloaded_files = await downloader.download_video(
-                result, args.download_dir, headers
-            )
+            downloaded_files = await downloader.download_video(result, args.download_dir)
             if downloaded_files:
                 logging.info(f"✅ 下载完成！共下载 {len(downloaded_files)} 个文件")
                 for filepath in downloaded_files:
