@@ -8,6 +8,8 @@ config.json
 temp/
 **/__pycache__/**
 
+# Project
+.env
 
 # AI
 AGENTS.md

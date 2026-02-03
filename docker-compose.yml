@@ -1,0 +1,18 @@
+services:
+  tg_mediadownloader:
+    #image: "ghcr.io/lightdestory/tg_mediadownloader:master"
+    image: "${TG_DOWNLOADER_IMAGE:-ghcr.io/lightdestory/tg_mediadownloader:v2026.01.11}"
+    container_name: TelegramMediaDownloaderBot
+    network_mode: host
+    volumes:
+      - "${DOWNLOAD_DIR}:${TG_DOWNLOAD_PATH}"
+    environment:
+      TG_API_ID: ${TG_API_ID}
+      TG_API_HASH: "${TG_API_HASH}"
+      TG_BOT_TOKEN: "${TG_BOT_TOKEN}"
+      TG_MAX_PARALLEL: ${TG_MAX_PARALLEL}
+      TG_DL_TIMEOUT: ${TG_DL_TIMEOUT}
+      TG_DOWNLOAD_PATH: "${TG_DOWNLOAD_PATH}"
+      TG_AUTHORIZED_USER_ID:  ${TG_AUTHORIZED_USER_ID}
+      TZ: "${TZ}"
+    restart: always
