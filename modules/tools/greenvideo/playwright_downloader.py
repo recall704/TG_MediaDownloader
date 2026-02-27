@@ -43,6 +43,12 @@ class PlaywrightGreenVideoDownloader:
         """
         使用网络拦截获取准确的请求和响应
 
+        支持重试机制，当遇到以下情况时会自动重试：
+        - 浏览器启动失败
+        - 页面加载超时
+        - API 响应超时
+        - 网络波动导致的临时错误
+
         Args:
             video_url: 视频链接
             headless: 是否使用无头模式
@@ -50,81 +56,146 @@ class PlaywrightGreenVideoDownloader:
         Returns:
             tuple: (result, headers) - 视频信息字典和响应headers
         """
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=headless)
-            page = await browser.new_page()
-            api_response = []
-            response_ready = asyncio.Event()
+        retry_count = 0
+        last_error = None
 
-            async def handle_response(response):
-                if "/api/video/cnSimpleExtract" not in response.url:
-                    return
+        while retry_count <= self.max_retries:
+            try:
+                if retry_count > 0:
+                    # 指数退避：2秒、4秒、8秒...
+                    delay = self.retry_delay * (2 ** (retry_count - 1))
+                    logging.info(f"第 {retry_count} 次重试，等待 {delay} 秒后开始...")
+                    await asyncio.sleep(delay)
 
-                try:
-                    response_text = await response.text()
-                    logging.debug(f"API响应: HTTP {response.status}")
+                logging.info(
+                    f"开始解析视频 (尝试 {retry_count + 1}/{self.max_retries + 1}): {video_url}"
+                )
 
-                    api_response.append(
-                        {
-                            "url": response.url,
-                            "status": response.status,
-                            "headers": dict(response.headers),
-                            "body": response_text,
-                        }
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(headless=headless)
+                    page = await browser.new_page()
+                    api_response = []
+                    response_ready = asyncio.Event()
+
+                    async def handle_response(response):
+                        if "/api/video/cnSimpleExtract" not in response.url:
+                            return
+
+                        try:
+                            response_text = await response.text()
+                            logging.debug(f"API响应: HTTP {response.status}")
+
+                            api_response.append(
+                                {
+                                    "url": response.url,
+                                    "status": response.status,
+                                    "headers": dict(response.headers),
+                                    "body": response_text,
+                                }
+                            )
+
+                            if response.status == 200:
+                                try:
+                                    data = json.loads(response_text)
+                                    if data.get("code") == 200:
+                                        response_ready.set()
+                                        logging.info(
+                                            f"✅ API调用成功: {data.get('message')}"
+                                        )
+                                    else:
+                                        logging.error(
+                                            f"❌ API错误 {data.get('code')}: {response_text}, {response.url}"
+                                        )
+                                except json.JSONDecodeError:
+                                    logging.error("响应JSON解析失败")
+                        except Exception as e:
+                            logging.error(f"读取响应失败: {e}")
+
+                    page.on(
+                        "response", lambda r: asyncio.create_task(handle_response(r))
                     )
 
-                    if response.status == 200:
+                    await page.goto(
+                        self.base_url,
+                        wait_until="networkidle",
+                        timeout=30000,
+                        referer=self.base_url,
+                    )
+                    await page.fill('input[placeholder*="视频链接"]', video_url)
+                    await page.get_by_role("button", name="开始").click()
+
+                    logging.info("等待API响应...")
+                    try:
+                        await asyncio.wait_for(
+                            response_ready.wait(), timeout=self.timeout / 1000
+                        )
+                        logging.info("收到成功响应")
+                        await asyncio.sleep(1.0)
+                    except asyncio.TimeoutError:
+                        logging.warning("等待响应超时，使用已记录的响应")
+
+                    await browser.close()
+
+                    # 查找成功的响应
+                    for resp in reversed(api_response):
+                        if resp["status"] != 200:
+                            continue
                         try:
-                            data = json.loads(response_text)
-                            if data.get("code") == 200:
-                                response_ready.set()
-                                logging.info(f"✅ API调用成功: {data.get('message')}")
-                            else:
-                                logging.error(
-                                    f"❌ API错误 {data.get('code')}: {response_text}, {response.url}"
+                            result = json.loads(resp["body"])
+                            if result.get("code") == 200:
+                                logging.info(
+                                    f"✅ 解析成功 (尝试 {retry_count + 1}/{self.max_retries + 1})"
+                                )
+                                return (
+                                    self._parse_response(result.get("data", {})),
+                                    resp["headers"],
                                 )
                         except json.JSONDecodeError:
-                            logging.error("响应JSON解析失败")
-                except Exception as e:
-                    logging.error(f"读取响应失败: {e}")
+                            continue
 
-            page.on("response", lambda r: asyncio.create_task(handle_response(r)))
+                    # 如果有响应但都失败了，检查是否为业务错误（不可重试）
+                    if api_response:
+                        for resp in api_response:
+                            try:
+                                result = json.loads(resp["body"])
+                                code = result.get("code")
+                                # 业务错误码，不需要重试
+                                if code and code != 200:
+                                    logging.error(
+                                        f"❌ 业务错误 (code={code})，无需重试: {result.get('message', '未知错误')}"
+                                    )
+                                    return None, {}
+                            except json.JSONDecodeError:
+                                continue
 
-            await page.goto(
-                self.base_url,
-                wait_until="networkidle",
-                timeout=30000,
-                referer=self.base_url,
-            )
-            await page.fill('input[placeholder*="视频链接"]', video_url)
-            await page.get_by_role("button", name="开始").click()
+                    # 没有成功响应，可能是临时错误，继续重试
+                    raise Exception("未获取到有效的API响应")
 
-            logging.info("等待API响应...")
-            try:
-                await asyncio.wait_for(
-                    response_ready.wait(), timeout=self.timeout / 1000
-                )
-                logging.info("收到成功响应")
-                await asyncio.sleep(1.0)
-            except asyncio.TimeoutError:
-                logging.warning("等待响应超时，使用已记录的响应")
+            except asyncio.TimeoutError as e:
+                last_error = e
+                retry_count += 1
+                if retry_count <= self.max_retries:
+                    logging.warning(
+                        f"⚠️ 超时错误 (第 {retry_count} 次/{self.max_retries} 重试): {e}"
+                    )
+                else:
+                    logging.error(f"❌ 超时错误 (已重试 {self.max_retries} 次): {e}")
 
-            await browser.close()
+            except Exception as e:
+                last_error = e
+                retry_count += 1
+                if retry_count <= self.max_retries:
+                    logging.warning(
+                        f"⚠️ 解析失败 (第 {retry_count} 次/{self.max_retries} 重试): {e}"
+                    )
+                else:
+                    logging.error(f"❌ 解析失败 (已重试 {self.max_retries} 次): {e}")
 
-            # 查找成功的响应
-            for resp in reversed(api_response):
-                if resp["status"] != 200:
-                    continue
-                try:
-                    result = json.loads(resp["body"])
-                    if result.get("code") == 200:
-                        return self._parse_response(result.get("data", {})), resp[
-                            "headers"
-                        ]
-                except json.JSONDecodeError:
-                    continue
-
-            return None, {}
+        # 所有重试都失败
+        logging.error(
+            f"❌ 解析失败，已达到最大重试次数 {self.max_retries}，最后错误: {last_error}"
+        )
+        return None, {}
 
     def _parse_response(self, data):
         """解析 API 响应数据"""

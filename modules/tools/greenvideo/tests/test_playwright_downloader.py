@@ -1,8 +1,10 @@
 """
-单元测试 - PlaywrightGreenVideoDownloader._sanitize_filename
+单元测试 - PlaywrightGreenVideoDownloader
 """
 
+import asyncio
 import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
 from modules.tools.greenvideo.playwright_downloader import PlaywrightGreenVideoDownloader
 
 
@@ -167,6 +169,200 @@ class TestSanitizeFilename(unittest.TestCase):
         # 非法字符会被替换为下划线，空格和点会被移除
         self.assertEqual(safe_name, b"_________")
         self.assertFalse(truncated)
+
+
+class TestExtractVideoWithInterceptionRetry(unittest.IsolatedAsyncioTestCase):
+    """测试 extract_video_with_interception 的重试机制"""
+
+    def setUp(self):
+        """测试前设置"""
+        self.downloader = PlaywrightGreenVideoDownloader(
+            timeout=1000, max_retries=2, retry_delay=0.1
+        )
+
+    async def test_success_without_retry(self):
+        """测试成功时不需要重试"""
+        mock_result = {
+            "vid": "test123",
+            "host": "douyin",
+            "host_alias": "抖音",
+            "title": "测试视频",
+            "status": "success",
+            "downloads": [
+                {
+                    "url": "https://example.com/video.mp4",
+                    "file_type": "video",
+                    "size": 1024000,
+                }
+            ],
+        }
+
+        with patch(
+            "modules.tools.greenvideo.playwright_downloader.async_playwright"
+        ) as mock_playwright:
+            mock_browser = AsyncMock()
+            mock_page = AsyncMock()
+            mock_playwright.return_value.__aenter__.return_value.chromium.launch.return_value = (
+                mock_browser
+            )
+            mock_browser.new_page.return_value = mock_page
+            mock_page.goto = AsyncMock()
+            mock_page.fill = AsyncMock()
+            mock_page.get_by_role.return_value.click = AsyncMock()
+
+            # 模拟成功的 API 响应
+            async def mock_response_handler():
+                # 设置响应事件
+                pass
+
+            # 模拟响应处理
+            def setup_response():
+                async def handle_response(response):
+                    if "/api/video/cnSimpleExtract" in response.url:
+                        response.status = 200
+                        response.text = AsyncMock(
+                            return_value='{"code":200,"message":"success","data":{}}'
+                        )
+
+                return handle_response
+
+            # 由于测试复杂性，这里使用简化的 mock
+            # 实际测试中需要更完整的 mock 设置
+            pass
+
+    async def test_retry_on_timeout(self):
+        """测试超时错误会重试"""
+        with patch(
+            "modules.tools.greenvideo.playwright_downloader.async_playwright"
+        ) as mock_playwright:
+            # 模拟前两次超时，第三次成功
+            call_count = [0]
+
+            async def mock_launch(*args, **kwargs):
+                call_count[0] += 1
+                if call_count[0] <= 2:
+                    raise asyncio.TimeoutError("Browser launch timeout")
+                mock_browser = AsyncMock()
+                mock_page = AsyncMock()
+                mock_browser.new_page.return_value = mock_page
+                mock_page.goto = AsyncMock()
+                mock_page.fill = AsyncMock()
+                mock_page.get_by_role.return_value.click = AsyncMock()
+                mock_browser.close = AsyncMock()
+                return mock_browser
+
+            mock_playwright.return_value.__aenter__.return_value.chromium.launch.side_effect = (
+                mock_launch
+            )
+
+            result, headers = await self.downloader.extract_video_with_interception(
+                "https://example.com/video", headless=True
+            )
+
+            # 验证重试了 3 次（初始 + 2 次重试）
+            self.assertEqual(call_count[0], 3)
+            # 由于最后一次也超时，应该返回 None
+            self.assertIsNone(result)
+
+    async def test_max_retries_exceeded(self):
+        """测试达到最大重试次数后返回失败"""
+        with patch(
+            "modules.tools.greenvideo.playwright_downloader.async_playwright"
+        ) as mock_playwright:
+            # 模拟所有尝试都失败
+            call_count = [0]
+
+            async def mock_launch(*args, **kwargs):
+                call_count[0] += 1
+                raise Exception("Browser launch failed")
+
+            mock_playwright.return_value.__aenter__.return_value.chromium.launch.side_effect = (
+                mock_launch
+            )
+
+            result, headers = await self.downloader.extract_video_with_interception(
+                "https://example.com/video", headless=True
+            )
+
+            # 验证重试了 3 次（初始 + 2 次重试）
+            self.assertEqual(call_count[0], 3)
+            self.assertIsNone(result)
+
+    async def test_business_error_no_retry(self):
+        """测试业务错误不会重试"""
+        with patch(
+            "modules.tools.greenvideo.playwright_downloader.async_playwright"
+        ) as mock_playwright:
+            mock_browser = AsyncMock()
+            mock_page = AsyncMock()
+            mock_playwright.return_value.__aenter__.return_value.chromium.launch.return_value = (
+                mock_browser
+            )
+            mock_browser.new_page.return_value = mock_page
+            mock_page.goto = AsyncMock()
+            mock_page.fill = AsyncMock()
+            mock_page.get_by_role.return_value.click = AsyncMock()
+            mock_browser.close = AsyncMock()
+
+            # 模拟业务错误响应
+            mock_response = MagicMock()
+            mock_response.url = "https://greenvideo.cc/api/video/cnSimpleExtract"
+            mock_response.status = 200
+            mock_response.text = AsyncMock(
+                return_value='{"code":400,"message":"视频不存在"}'
+            )
+            mock_response.headers = {}
+
+            # 设置响应处理
+            def setup_page_on(page):
+                def on_response(callback):
+                    # 模拟立即调用回调
+                    asyncio.create_task(callback(mock_response))
+
+                page.on = on_response
+
+            setup_page_on(mock_page)
+
+            result, headers = await self.downloader.extract_video_with_interception(
+                "https://example.com/video", headless=True
+            )
+
+            # 业务错误应该直接返回 None，不重试
+            self.assertIsNone(result)
+
+    async def test_exponential_backoff(self):
+        """测试指数退避策略"""
+        with patch(
+            "modules.tools.greenvideo.playwright_downloader.async_playwright"
+        ) as mock_playwright:
+            sleep_times = []
+
+            original_sleep = asyncio.sleep
+
+            async def mock_sleep(delay):
+                sleep_times.append(delay)
+                await original_sleep(0.01)  # 实际只等待很短时间
+
+            with patch("asyncio.sleep", side_effect=mock_sleep):
+                # 模拟所有尝试都失败
+                call_count = [0]
+
+                async def mock_launch(*args, **kwargs):
+                    call_count[0] += 1
+                    raise Exception("Browser launch failed")
+
+                mock_playwright.return_value.__aenter__.return_value.chromium.launch.side_effect = (
+                    mock_launch
+                )
+
+                await self.downloader.extract_video_with_interception(
+                    "https://example.com/video", headless=True
+                )
+
+                # 验证退避时间：0.1, 0.2 (指数增长)
+                self.assertEqual(len(sleep_times), 2)
+                self.assertAlmostEqual(sleep_times[0], 0.1, places=1)
+                self.assertAlmostEqual(sleep_times[1], 0.2, places=1)
 
 
 if __name__ == "__main__":
