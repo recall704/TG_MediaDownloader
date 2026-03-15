@@ -104,6 +104,8 @@ config_manager: ConfigManager = ConfigManager(
     Path(os.environ.get("CONFIG_PATH", "./config.json"))
 )
 queue: Queue = asyncio.Queue()
+greenvideo_queue: Queue = asyncio.Queue()  # GreenVideo 下载专用队列
+greenvideo_worker_task: Task | None = None
 tasks: list[Task] = []
 workers: list[Task] = []
 
@@ -170,9 +172,166 @@ async def main() -> None:
 
 
 def generate_workers(quantity: int) -> None:
+    global greenvideo_worker_task
     loop = asyncio.get_event_loop_policy().get_event_loop()
     for i in range(quantity):
         workers.append(loop.create_task(worker()))
+    # 启动 GreenVideo 专用 worker（串行处理）
+    greenvideo_worker_task = loop.create_task(greenvideo_worker())
+
+
+# GreenVideo 队列相关函数
+async def enqueue_greenvideo_job(url: str, download_dir: str, message: Message) -> None:
+    """
+    将 GreenVideo 下载任务加入队列
+
+    Args:
+        url: 视频链接
+        download_dir: 下载目录
+        message: Telegram 消息对象，用于显示进度
+    """
+    # 获取队列大小（入队前的任务数）
+    queue_size_before = greenvideo_queue.qsize()
+
+    # 发送入队消息
+    if queue_size_before == 0:
+        reply = await message.reply_text("⏳ 正在等待下载...", quote=False)
+    else:
+        reply = await message.reply_text(
+            f"⏳ 已加入下载队列，前面还有 {queue_size_before} 个任务",
+            quote=False
+        )
+
+    # 入队（包含 reply 消息对象）
+    await greenvideo_queue.put({
+        "url": url,
+        "download_dir": download_dir,
+        "message": message,
+        "reply": reply,
+        "enqueue_time": time.time()
+    })
+
+    logging.info(f"GreenVideo task enqueued: {url}, queue size: {queue_size_before + 1}")
+
+
+async def greenvideo_worker() -> None:
+    """
+    GreenVideo 专用 worker，串行处理下载任务
+    """
+    while True:
+        job = None
+        try:
+            # 从队列获取任务
+            job = await greenvideo_queue.get()
+
+            url = job["url"]
+            download_dir = job["download_dir"]
+            message = job["message"]
+            reply = job["reply"]
+
+            logging.info(f"GreenVideo worker processing: {url}")
+
+            # 调用原有的 download_greenvideo 函数
+            await download_greenvideo(url, download_dir, message, reply)
+
+        except asyncio.CancelledError:
+            # 任务被取消时重新抛出，让协程正确退出
+            raise
+        except Exception as e:
+            logging.error(f"Error in greenvideo_worker: {e}, {traceback.format_exc()}")
+            # 任务失败时通知用户
+            if reply:
+                try:
+                    await safe_edit_message(reply, f"下载失败: {str(e)}")
+                except Exception:
+                    pass
+        finally:
+            # 只有在成功获取到任务时才调用 task_done()
+            if job is not None:
+                greenvideo_queue.task_done()
+
+
+async def download_greenvideo(url: str, download_dir: str, message: Message, reply: Message | None = None) -> None:
+    """
+    使用 GreenVideo 下载视频
+
+    Args:
+        url: 视频链接
+        download_dir: 下载目录
+        message: Telegram 消息对象，用于显示进度
+        reply: 可选的回复消息对象（队列模式下使用）
+    """
+    downloader = PlaywrightGreenVideoDownloader()
+
+    try:
+        # 发送初始消息（队列模式下使用已存在的 reply）
+        if reply is None:
+            reply = await message.reply_text(f"🔍 正在解析视频链接...{url}", quote=False)
+        else:
+            await safe_edit_message(reply, f"🔍 正在解析视频链接...{url}")
+
+        # 提取视频信息
+        result, headers = await downloader.extract_video_with_interception(
+            url,
+            headless=True
+        )
+
+        if not result or not result.get("downloads"):
+            await safe_edit_message(reply, "❌ 无法解析视频链接或没有可下载的视频")
+            logging.warning(f"Failed to extract video from URL: {url}")
+            return
+
+        # 显示视频信息
+        title = result.get("title", "未知标题")
+        platform = result.get("host_alias", result.get("host", "未知平台"))
+        video_count = len(result["downloads"])
+
+        await safe_edit_message(
+            reply,
+            f"✅ 找到视频！\n"
+            f"标题: {title}\n"
+            f"平台: {platform}\n"
+            f"数量: {video_count} 个视频\n"
+            f"开始下载..."
+        )
+
+        # 定义进度回调
+        async def progress_callback(current: int, total: int, file_info: dict) -> None:
+            await greenvideo_progress_callback(current, total, file_info, reply)
+
+        # 下载视频
+        downloaded_files = await downloader.download_video(
+            result,
+            download_dir,
+            download_timeout=config_manager.get_config().TG_DL_TIMEOUT,
+            progress_callback=progress_callback,
+        )
+
+        # 显示下载结果
+        if downloaded_files:
+            finish_time = time.strftime("%H:%M", time.localtime())
+            result_text = (
+                f"✅ 下载完成！\n"
+                f"完成时间: {finish_time}\n"
+                f"成功下载 {len(downloaded_files)} 个文件:\n"
+            )
+            for filepath in downloaded_files:
+                result_text += f"  • {filepath}\n"
+
+            await safe_edit_message(reply, result_text)
+            logging.info(
+                f"Successfully downloaded {len(downloaded_files)} files from {url}"
+            )
+        else:
+            await safe_edit_message(reply, "❌ 下载失败")
+            logging.error(f"Failed to download video from {url}")
+
+    except asyncio.TimeoutError:
+        await safe_edit_message(reply, "❌ 下载超时")
+        logging.error(f"Timeout downloading video from {url}")
+    except Exception as e:
+        await safe_edit_message(reply, f"❌ 下载出错: {str(e)}")
+        logging.error(f"Error downloading video from {url}: {e}, {traceback.format_exc()}")
 
 
 def get_command_list() -> list[BotCommand]:
@@ -252,19 +411,40 @@ async def abort(kill_workers: bool = False) -> None:
     This function abort all the current tasks, and kills workers if needed
     :param kill_workers: A control flag to kill all the workers
     """
+    global greenvideo_worker_task
+
     if tasks or not queue.empty():
         logging.info("Aborting all the pending jobs")
         for t in tasks:
             t.cancel()
-        for _ in range(queue.qsize()):
-            queue_item = queue.get_nowait()
-            reply: Message = queue_item[1]
-            await safe_edit_message(reply, "Aborted")
-            queue.task_done()
+        while not queue.empty():
+            try:
+                queue_item = queue.get_nowait()
+                reply: Message = queue_item[1]
+                await safe_edit_message(reply, "Aborted")
+                queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
+    # 取消 GreenVideo 队列中的任务
+    logging.info("Aborting all the pending GreenVideo jobs")
+    while not greenvideo_queue.empty():
+        try:
+            job = greenvideo_queue.get_nowait()
+            reply: Message = job.get("reply")
+            if reply:
+                await safe_edit_message(reply, "Aborted")
+            greenvideo_queue.task_done()
+        except asyncio.QueueEmpty:
+            break
+
     if kill_workers:
         logging.info("Killing all the workers")
         for w in workers:
             w.cancel()
+        # 取消 GreenVideo worker
+        if greenvideo_worker_task:
+            greenvideo_worker_task.cancel()
 
 
 # Enqueue a job
@@ -287,53 +467,58 @@ async def worker_progress(current, total, reply: list[Message]) -> None:
 # Parallel worker to download media files
 async def worker() -> None:
     while True:
-        # Get a "work item" out of the queue.
-        queue_item = await queue.get()
-        message: Message = queue_item[0]
-        reply: Message = queue_item[1]
-        file_name: str = queue_item[2]
-        file_path = os.path.join(
-            config_manager.get_config().TG_DOWNLOAD_PATH, file_name
-        )
+        queue_item = None
         try:
-            start_time = time.time()
-            logging.info(f"{file_name} - Download started")
-            reply = await safe_edit_message(reply, "Downloading:  0%")
-            task = asyncio.get_event_loop().create_task(
-                message.download(
-                    file_path, progress=worker_progress, progress_args=([reply],)
+            # Get a "work item" out of the queue.
+            queue_item = await queue.get()
+            message: Message = queue_item[0]
+            reply: Message = queue_item[1]
+            file_name: str = queue_item[2]
+            file_path = os.path.join(
+                config_manager.get_config().TG_DOWNLOAD_PATH, file_name
+            )
+            try:
+                start_time = time.time()
+                logging.info(f"{file_name} - Download started")
+                reply = await safe_edit_message(reply, "Downloading:  0%")
+                task = asyncio.get_event_loop().create_task(
+                    message.download(
+                        file_path, progress=worker_progress, progress_args=([reply],)
+                    )
                 )
-            )
-            tasks.append(task)
-            await asyncio.wait_for(
-                task, timeout=config_manager.get_config().TG_DL_TIMEOUT
-            )
-            end_time = time.time()
-            duration = end_time - start_time
-            duration_str = format_duration(duration)
-            logging.info(
-                f"{file_name} - Successfully downloaded (duration: {duration_str})"
-            )
-            # Use configured timezone for finish time display
-            finish_time = time.strftime("%H:%M", time.localtime())
-            await safe_edit_message(reply, f"Finished at {finish_time}\nDuration: {duration_str}")
-        except MessageNotModified:
-            pass
+                tasks.append(task)
+                await asyncio.wait_for(
+                    task, timeout=config_manager.get_config().TG_DL_TIMEOUT
+                )
+                end_time = time.time()
+                duration = end_time - start_time
+                duration_str = format_duration(duration)
+                logging.info(
+                    f"{file_name} - Successfully downloaded (duration: {duration_str})"
+                )
+                # Use configured timezone for finish time display
+                finish_time = time.strftime("%H:%M", time.localtime())
+                await safe_edit_message(reply, f"Finished at {finish_time}\nDuration: {duration_str}")
+            except MessageNotModified:
+                pass
+            except asyncio.CancelledError:
+                logging.warning(f"{file_name} - Aborted")
+                await safe_edit_message(reply, "Aborted")
+            except asyncio.TimeoutError:
+                logging.error(f"{file_name} - TIMEOUT ERROR")
+                await safe_edit_message(reply, "**ERROR:** __Timeout reached downloading this file__")
+            except Exception as e:
+                logging.error(f"{file_name} - {str(e)}")
+                await safe_edit_message(
+                    reply,
+                    f"**ERROR:** Exception {(e.__class__.__name__, str(e))} raised downloading this file: {file_name}"
+                )
         except asyncio.CancelledError:
-            logging.warning(f"{file_name} - Aborted")
-            await safe_edit_message(reply, "Aborted")
-        except asyncio.TimeoutError:
-            logging.error(f"{file_name} - TIMEOUT ERROR")
-            await safe_edit_message(reply, "**ERROR:** __Timeout reached downloading this file__")
-        except Exception as e:
-            logging.error(f"{file_name} - {str(e)}")
-            await safe_edit_message(
-                reply,
-                f"**ERROR:** Exception {(e.__class__.__name__, str(e))} raised downloading this file: {file_name}"
-            )
-
-        # Notify the queue that the "work item" has been processed.
-        queue.task_done()
+            raise
+        finally:
+            # Only call task_done() if we actually got a job from the queue
+            if queue_item is not None:
+                queue.task_done()
 
 
 app = init()
@@ -520,85 +705,6 @@ async def greenvideo_progress_callback(
                 pass
 
 
-async def download_greenvideo(url: str, download_dir: str, message: Message) -> None:
-    """
-    使用 GreenVideo 下载视频
-
-    Args:
-        url: 视频链接
-        download_dir: 下载目录
-        message: Telegram 消息对象，用于显示进度
-    """
-    downloader = PlaywrightGreenVideoDownloader()
-
-    try:
-        # 发送初始消息
-        reply = await message.reply_text(f"🔍 正在解析视频链接...{url}", quote=False)
-
-        # 提取视频信息
-        result, headers = await downloader.extract_video_with_interception(
-            url,
-            headless=True
-        )
-
-        if not result or not result.get("downloads"):
-            await safe_edit_message(reply, "❌ 无法解析视频链接或没有可下载的视频")
-            logging.warning(f"Failed to extract video from URL: {url}")
-            return
-
-        # 显示视频信息
-        title = result.get("title", "未知标题")
-        platform = result.get("host_alias", result.get("host", "未知平台"))
-        video_count = len(result["downloads"])
-
-        await safe_edit_message(
-            reply,
-            f"✅ 找到视频！\n"
-            f"标题: {title}\n"
-            f"平台: {platform}\n"
-            f"数量: {video_count} 个视频\n"
-            f"开始下载..."
-        )
-
-        # 定义进度回调
-        async def progress_callback(current: int, total: int, file_info: dict) -> None:
-            await greenvideo_progress_callback(current, total, file_info, reply)
-
-        # 下载视频
-        downloaded_files = await downloader.download_video(
-            result,
-            download_dir,
-            download_timeout=config_manager.get_config().TG_DL_TIMEOUT,
-            progress_callback=progress_callback,
-        )
-
-        # 显示下载结果
-        if downloaded_files:
-            finish_time = time.strftime("%H:%M", time.localtime())
-            result_text = (
-                f"✅ 下载完成！\n"
-                f"完成时间: {finish_time}\n"
-                f"成功下载 {len(downloaded_files)} 个文件:\n"
-            )
-            for filepath in downloaded_files:
-                result_text += f"  • {filepath}\n"
-
-            await safe_edit_message(reply, result_text)
-            logging.info(
-                f"Successfully downloaded {len(downloaded_files)} files from {url}"
-            )
-        else:
-            await safe_edit_message(reply, "❌ 下载失败")
-            logging.error(f"Failed to download video from {url}")
-
-    except asyncio.TimeoutError:
-        await safe_edit_message(reply, "❌ 下载超时")
-        logging.error(f"Timeout downloading video from {url}")
-    except Exception as e:
-        await safe_edit_message(reply, f"❌ 下载出错: {str(e)}")
-        logging.error(f"Error downloading video from {url}: {e}, {traceback.format_exc()}")
-
-
 @app.on_message(
     filters.private
     & filters.user(users=config_manager.get_config().TG_AUTHORIZED_USER_ID)
@@ -610,8 +716,8 @@ async def text_message(_, message: Message) -> None:
     magnet = extract.extract_magnet(message.text)
     if url:
         download_dir = config_manager.get_config().TG_DOWNLOAD_PATH
-        # 使用 greenvideo 下载视频
-        await download_greenvideo(url, download_dir, message)
+        # 使用 greenvideo 下载视频（加入队列）
+        await enqueue_greenvideo_job(url, download_dir, message)
     elif magnet:
         await message.reply_text(magnet, quote=False)
     else:
