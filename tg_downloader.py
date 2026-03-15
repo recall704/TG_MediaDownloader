@@ -10,10 +10,7 @@ from pathlib import Path
 
 import pyroaddon
 from pyrogram import Client, filters
-from pyrogram.errors import MessageNotModified
-from pyrogram.methods.utilities.idle import idle
-from pyrogram.raw.functions.bots import SetBotCommands
-from pyrogram.raw.types import BotCommand, BotCommandScopeDefault
+from pyrogram.errors import MessageNotModified, FloodWait
 from pyrogram.types import (
     Message,
     Photo,
@@ -27,6 +24,70 @@ from pyrogram.types import (
     Document,
 )
 from pyrogram.enums import ParseMode, MessageMediaType
+
+
+# 全局消息编辑锁，防止 FloodWait
+_message_edit_locks: dict[int, float] = {}
+_MIN_EDIT_INTERVAL: float = 1.0  # 同一消息编辑最小间隔（秒）
+
+
+async def safe_edit_message(
+    message: Message,
+    text: str,
+    max_retries: int = 3,
+) -> Message | None:
+    """
+    安全地编辑消息，带有 FloodWait 处理和重试机制
+
+    Args:
+        message: 要编辑的消息对象
+        text: 新的文本内容
+        max_retries: 最大重试次数
+
+    Returns:
+        编辑后的消息对象，失败返回 None
+    """
+    chat_id = message.chat.id
+    msg_id = message.id
+    current_time = time.time()
+
+    # 检查是否需要等待（全局速率限制）
+    if chat_id in _message_edit_locks:
+        last_edit_time = _message_edit_locks[chat_id]
+        wait_time = _MIN_EDIT_INTERVAL - (current_time - last_edit_time)
+        if wait_time > 0:
+            logging.info(f"Rate limiting: waiting {wait_time:.1f}s before editing message {msg_id}")
+            await asyncio.sleep(wait_time)
+
+    for attempt in range(max_retries):
+        try:
+            # 更新最后编辑时间
+            _message_edit_locks[chat_id] = time.time()
+            result = await message.edit(text)
+            return result
+        except FloodWait as e:
+            wait_seconds = e.value
+            logging.warning(
+                f"FloodWait detected for message {msg_id}, "
+                f"waiting {wait_seconds}s (attempt {attempt + 1}/{max_retries})"
+            )
+            if attempt < max_retries - 1:
+                await asyncio.sleep(wait_seconds)
+            else:
+                logging.error(f"FloodWait: Max retries reached for message {msg_id}")
+                return None
+        except MessageNotModified:
+            return None
+        except Exception as e:
+            logging.error(f"Error editing message {msg_id}: {e}")
+            return None
+
+    return None
+
+
+from pyrogram.methods.utilities.idle import idle
+from pyrogram.raw.functions.bots import SetBotCommands
+from pyrogram.raw.types import BotCommand, BotCommandScopeDefault
 
 from modules.ConfigManager import ConfigManager
 from modules.helpers import get_config_from_user_or_env
@@ -198,7 +259,7 @@ async def abort(kill_workers: bool = False) -> None:
         for _ in range(queue.qsize()):
             queue_item = queue.get_nowait()
             reply: Message = queue_item[1]
-            await reply.edit("Aborted")
+            await safe_edit_message(reply, "Aborted")
             queue.task_done()
     if kill_workers:
         logging.info("Killing all the workers")
@@ -218,7 +279,9 @@ async def worker_progress(current, total, reply: list[Message]) -> None:
     status = int(current * 100 / total)
     message = reply[0]
     if status != 0 and status % 5 == 0 and str(status) not in message.text:
-        reply[0] = await message.edit(f"Downloading: {status}%")
+        result = await safe_edit_message(message, f"Downloading: {status}%")
+        if result:
+            reply[0] = result
 
 
 # Parallel worker to download media files
@@ -235,7 +298,7 @@ async def worker() -> None:
         try:
             start_time = time.time()
             logging.info(f"{file_name} - Download started")
-            reply = await reply.edit("Downloading:  0%")
+            reply = await safe_edit_message(reply, "Downloading:  0%")
             task = asyncio.get_event_loop().create_task(
                 message.download(
                     file_path, progress=worker_progress, progress_args=([reply],)
@@ -253,18 +316,19 @@ async def worker() -> None:
             )
             # Use configured timezone for finish time display
             finish_time = time.strftime("%H:%M", time.localtime())
-            await reply.edit(f"Finished at {finish_time}\nDuration: {duration_str}")
+            await safe_edit_message(reply, f"Finished at {finish_time}\nDuration: {duration_str}")
         except MessageNotModified:
             pass
         except asyncio.CancelledError:
             logging.warning(f"{file_name} - Aborted")
-            await reply.edit("Aborted")
+            await safe_edit_message(reply, "Aborted")
         except asyncio.TimeoutError:
             logging.error(f"{file_name} - TIMEOUT ERROR")
-            await reply.edit("**ERROR:** __Timeout reached downloading this file__")
+            await safe_edit_message(reply, "**ERROR:** __Timeout reached downloading this file__")
         except Exception as e:
             logging.error(f"{file_name} - {str(e)}")
-            await reply.edit(
+            await safe_edit_message(
+                reply,
                 f"**ERROR:** Exception {(e.__class__.__name__, str(e))} raised downloading this file: {file_name}"
             )
 
@@ -443,7 +507,8 @@ async def greenvideo_progress_callback(
         if current_time - last_update >= 10 or progress == 100:
             try:
                 update_time_str = time.strftime("%H:%M:%S", time.localtime(current_time))
-                await reply_message.edit(
+                await safe_edit_message(
+                    reply_message,
                     f"📥 下载中...\n"
                     f"文件: {filename}\n"
                     f"进度: {current_file}/{total_files} - {progress}%\n"
@@ -477,7 +542,7 @@ async def download_greenvideo(url: str, download_dir: str, message: Message) -> 
         )
 
         if not result or not result.get("downloads"):
-            await reply.edit("❌ 无法解析视频链接或没有可下载的视频")
+            await safe_edit_message(reply, "❌ 无法解析视频链接或没有可下载的视频")
             logging.warning(f"Failed to extract video from URL: {url}")
             return
 
@@ -486,7 +551,8 @@ async def download_greenvideo(url: str, download_dir: str, message: Message) -> 
         platform = result.get("host_alias", result.get("host", "未知平台"))
         video_count = len(result["downloads"])
 
-        await reply.edit(
+        await safe_edit_message(
+            reply,
             f"✅ 找到视频！\n"
             f"标题: {title}\n"
             f"平台: {platform}\n"
@@ -517,19 +583,19 @@ async def download_greenvideo(url: str, download_dir: str, message: Message) -> 
             for filepath in downloaded_files:
                 result_text += f"  • {filepath}\n"
 
-            await reply.edit(result_text)
+            await safe_edit_message(reply, result_text)
             logging.info(
                 f"Successfully downloaded {len(downloaded_files)} files from {url}"
             )
         else:
-            await reply.edit("❌ 下载失败")
+            await safe_edit_message(reply, "❌ 下载失败")
             logging.error(f"Failed to download video from {url}")
 
     except asyncio.TimeoutError:
-        await reply.edit("❌ 下载超时")
+        await safe_edit_message(reply, "❌ 下载超时")
         logging.error(f"Timeout downloading video from {url}")
     except Exception as e:
-        await reply.edit(f"❌ 下载出错: {str(e)}")
+        await safe_edit_message(reply, f"❌ 下载出错: {str(e)}")
         logging.error(f"Error downloading video from {url}: {e}, {traceback.format_exc()}")
 
 
@@ -621,9 +687,9 @@ async def abort_callback(_, callback_query: CallbackQuery) -> None:
         if tasks:
             await abort()
             reply = "All pending jobs have been terminated."
-        await callback_query.edit_message_text(reply)
+        await safe_edit_message(callback_query.message, reply)
     else:
-        await callback_query.edit_message_text("Operation cancelled")
+        await safe_edit_message(callback_query.message, "Operation cancelled")
 
 
 @app.on_callback_query(
@@ -635,9 +701,10 @@ async def set_dl_path_callback(client: Client, callback_query: CallbackQuery) ->
     answer: str = callback_query.data.split("/")[1]
     await callback_query.edit_message_reply_markup()
     if answer == "no":
-        await callback_query.edit_message_text("Operation cancelled")
+        await safe_edit_message(callback_query.message, "Operation cancelled")
     else:
-        await callback_query.edit_message_text(
+        await safe_edit_message(
+            callback_query.message,
             "Enter the new download path in 60 seconds: "
         )
         try:
@@ -649,7 +716,7 @@ async def set_dl_path_callback(client: Client, callback_query: CallbackQuery) ->
                 reply_str = "An error occurred while changing the download dir, please check logs!"
             await client.send_message(message.chat.id, text=reply_str)
         except asyncio.TimeoutError:
-            await callback_query.edit_message_text("Operation cancelled")
+            await safe_edit_message(callback_query.message, "Operation cancelled")
 
 
 @app.on_callback_query(
@@ -663,9 +730,10 @@ async def set_max_parallel_dl_callback(
     answer: str = callback_query.data.split("/")[1]
     await callback_query.edit_message_reply_markup()
     if answer == "no":
-        await callback_query.edit_message_text("Operation cancelled")
+        await safe_edit_message(callback_query.message, "Operation cancelled")
     else:
-        await callback_query.edit_message_text(
+        await safe_edit_message(
+            callback_query.message,
             "Enter the new max parallel downloads in 30 seconds: "
         )
         try:
@@ -678,7 +746,7 @@ async def set_max_parallel_dl_callback(
                 reply_str = "An error occurred while changing the download dir, please check logs!"
             await client.send_message(message.chat.id, text=reply_str)
         except asyncio.TimeoutError:
-            await callback_query.edit_message_text("Operation cancelled")
+            await safe_edit_message(callback_query.message, "Operation cancelled")
 
 
 @app.on_callback_query(
@@ -699,7 +767,8 @@ async def media_rename_callback(client: Client, callback_query: CallbackQuery) -
             await enqueue_job(message, file_name)
         else:
             await callback_query.edit_message_reply_markup()
-            await callback_query.edit_message_text(
+            await safe_edit_message(
+                callback_query.message,
                 "Enter the name in 15 seconds or it will downloading using file_id."
             )
             try:
@@ -715,7 +784,8 @@ async def media_rename_callback(client: Client, callback_query: CallbackQuery) -
                 await enqueue_job(message, file_name)
     else:
         await callback_query.edit_message_reply_markup()
-        await callback_query.edit_message_text(
+        await safe_edit_message(
+            callback_query.message,
             "The media's message is not available anymore (too long since input?"
         )
 
