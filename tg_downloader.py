@@ -56,7 +56,9 @@ async def safe_edit_message(
         last_edit_time = _message_edit_locks[chat_id]
         wait_time = _MIN_EDIT_INTERVAL - (current_time - last_edit_time)
         if wait_time > 0:
-            logging.info(f"Rate limiting: waiting {wait_time:.1f}s before editing message {msg_id}")
+            logging.info(
+                f"Rate limiting: waiting {wait_time:.1f}s before editing message {msg_id}"
+            )
             await asyncio.sleep(wait_time)
 
     for attempt in range(max_retries):
@@ -96,6 +98,7 @@ from modules.utils import extract
 from modules.tools.greenvideo.playwright_downloader import (
     PlaywrightGreenVideoDownloader,
 )
+from modules import forward_listener
 
 GITHUB_LINK: str = "https://github.com/LightDestory/TG_MediaDownloader"
 DONATION_LINK: str = "https://ko-fi.com/lightdestory"
@@ -103,6 +106,7 @@ DONATION_LINK: str = "https://ko-fi.com/lightdestory"
 config_manager: ConfigManager = ConfigManager(
     Path(os.environ.get("CONFIG_PATH", "./config.json"))
 )
+forward_listener.set_config_manager(config_manager)
 queue: Queue = asyncio.Queue()
 greenvideo_queue: Queue = asyncio.Queue()  # GreenVideo 下载专用队列
 greenvideo_worker_task: Task | None = None
@@ -198,20 +202,23 @@ async def enqueue_greenvideo_job(url: str, download_dir: str, message: Message) 
         reply = await message.reply_text("⏳ 正在等待下载...", quote=False)
     else:
         reply = await message.reply_text(
-            f"⏳ 已加入下载队列，前面还有 {queue_size_before} 个任务",
-            quote=False
+            f"⏳ 已加入下载队列，前面还有 {queue_size_before} 个任务", quote=False
         )
 
     # 入队（包含 reply 消息对象）
-    await greenvideo_queue.put({
-        "url": url,
-        "download_dir": download_dir,
-        "message": message,
-        "reply": reply,
-        "enqueue_time": time.time()
-    })
+    await greenvideo_queue.put(
+        {
+            "url": url,
+            "download_dir": download_dir,
+            "message": message,
+            "reply": reply,
+            "enqueue_time": time.time(),
+        }
+    )
 
-    logging.info(f"GreenVideo task enqueued: {url}, queue size: {queue_size_before + 1}")
+    logging.info(
+        f"GreenVideo task enqueued: {url}, queue size: {queue_size_before + 1}"
+    )
 
 
 async def greenvideo_worker() -> None:
@@ -251,7 +258,9 @@ async def greenvideo_worker() -> None:
                 greenvideo_queue.task_done()
 
 
-async def download_greenvideo(url: str, download_dir: str, message: Message, reply: Message | None = None) -> None:
+async def download_greenvideo(
+    url: str, download_dir: str, message: Message, reply: Message | None = None
+) -> None:
     """
     使用 GreenVideo 下载视频
 
@@ -266,14 +275,15 @@ async def download_greenvideo(url: str, download_dir: str, message: Message, rep
     try:
         # 发送初始消息（队列模式下使用已存在的 reply）
         if reply is None:
-            reply = await message.reply_text(f"🔍 正在解析视频链接...{url}", quote=False)
+            reply = await message.reply_text(
+                f"🔍 正在解析视频链接...{url}", quote=False
+            )
         else:
             await safe_edit_message(reply, f"🔍 正在解析视频链接...{url}")
 
         # 提取视频信息
         result, headers = await downloader.extract_video_with_interception(
-            url,
-            headless=True
+            url, headless=True
         )
 
         if not result or not result.get("downloads"):
@@ -292,7 +302,7 @@ async def download_greenvideo(url: str, download_dir: str, message: Message, rep
             f"标题: {title}\n"
             f"平台: {platform}\n"
             f"数量: {video_count} 个视频\n"
-            f"开始下载..."
+            f"开始下载...",
         )
 
         # 定义进度回调
@@ -331,7 +341,9 @@ async def download_greenvideo(url: str, download_dir: str, message: Message, rep
         logging.error(f"Timeout downloading video from {url}")
     except Exception as e:
         await safe_edit_message(reply, f"❌ 下载出错: {str(e)}")
-        logging.error(f"Error downloading video from {url}: {e}, {traceback.format_exc()}")
+        logging.error(
+            f"Error downloading video from {url}: {e}, {traceback.format_exc()}"
+        )
 
 
 def get_command_list() -> list[BotCommand]:
@@ -360,6 +372,18 @@ def get_command_list() -> list[BotCommand]:
         BotCommand(
             command="set_max_parallel_dl",
             description="Sets the number of max parallel downloads",
+        ),
+        BotCommand(
+            command="listen_forward",
+            description="Start listening to a channel and forward messages to target",
+        ),
+        BotCommand(
+            command="stop_listen",
+            description="Stop listening to a channel",
+        ),
+        BotCommand(
+            command="forward_status",
+            description="Show active forward listeners",
         ),
     ]
 
@@ -498,7 +522,9 @@ async def worker() -> None:
                 )
                 # Use configured timezone for finish time display
                 finish_time = time.strftime("%H:%M", time.localtime())
-                await safe_edit_message(reply, f"Finished at {finish_time}\nDuration: {duration_str}")
+                await safe_edit_message(
+                    reply, f"Finished at {finish_time}\nDuration: {duration_str}"
+                )
             except MessageNotModified:
                 pass
             except asyncio.CancelledError:
@@ -506,12 +532,14 @@ async def worker() -> None:
                 await safe_edit_message(reply, "Aborted")
             except asyncio.TimeoutError:
                 logging.error(f"{file_name} - TIMEOUT ERROR")
-                await safe_edit_message(reply, "**ERROR:** __Timeout reached downloading this file__")
+                await safe_edit_message(
+                    reply, "**ERROR:** __Timeout reached downloading this file__"
+                )
             except Exception as e:
                 logging.error(f"{file_name} - {str(e)}")
                 await safe_edit_message(
                     reply,
-                    f"**ERROR:** Exception {(e.__class__.__name__, str(e))} raised downloading this file: {file_name}"
+                    f"**ERROR:** Exception {(e.__class__.__name__, str(e))} raised downloading this file: {file_name}",
                 )
         except asyncio.CancelledError:
             raise
@@ -691,14 +719,16 @@ async def greenvideo_progress_callback(
         # 每 10 秒更新一次，或下载完成时强制更新
         if current_time - last_update >= 10 or progress == 100:
             try:
-                update_time_str = time.strftime("%H:%M:%S", time.localtime(current_time))
+                update_time_str = time.strftime(
+                    "%H:%M:%S", time.localtime(current_time)
+                )
                 await safe_edit_message(
                     reply_message,
                     f"📥 下载中...\n"
                     f"文件: {filename}\n"
                     f"进度: {current_file}/{total_files} - {progress}%\n"
                     f"大小: {current}/{total} bytes\n"
-                    f"上次更新: {update_time_str}"
+                    f"上次更新: {update_time_str}",
                 )
                 file_info["last_update_time"] = current_time
             except MessageNotModified:
@@ -715,13 +745,114 @@ async def text_message(_, message: Message) -> None:
     url = extract.extract_url(message.text)
     magnet = extract.extract_magnet(message.text)
     if url:
-        download_dir = config_manager.get_config().TG_DOWNLOAD_PATH
-        # 使用 greenvideo 下载视频（加入队列）
-        await enqueue_greenvideo_job(url, download_dir, message)
+        if extract.is_telegram_link(url):
+            await download_telegram_post_video(app, message, url)
+        else:
+            download_dir = config_manager.get_config().TG_DOWNLOAD_PATH
+            await enqueue_greenvideo_job(url, download_dir, message)
     elif magnet:
         await message.reply_text(magnet, quote=False)
     else:
         await message.reply_text(message.text, quote=True)
+
+
+async def download_telegram_post_video(
+    app: Client, message: Message, link: str
+) -> None:
+    """
+    下载 Telegram 公开频道帖子中的视频
+
+    :param app: Pyrogram 客户端
+    :param message: 用户发送的消息对象
+    :param link: Telegram 帖子链接
+    """
+    from urllib.parse import urlparse
+    from pyrogram.errors import MessageIdInvalid, ChannelInvalid, UsernameNotOccupied
+
+    reply = await message.reply_text("🔍 正在解析帖子链接...", quote=True)
+
+    try:
+        parsed = urlparse(link)
+        path_parts = parsed.path.strip("/").split("/")
+
+        if len(path_parts) < 2 or path_parts[0] == "c":
+            await safe_edit_message(
+                reply, "❌ 仅支持公开频道链接，私有频道链接无法访问"
+            )
+            return
+
+        username = path_parts[0]
+        message_id = int(path_parts[1])
+
+        chat = await app.get_chat(username)
+        logging.info(f"Resolved chat: {chat.title} (id={chat.id})")
+
+        msg = await app.get_messages(chat.id, message_id)
+        if not msg:
+            await safe_edit_message(reply, "❌ 无法获取消息，链接可能无效")
+            return
+
+        if not msg.video:
+            await safe_edit_message(reply, "❌ 该消息中没有视频")
+            return
+
+        video = msg.video
+        file_name = video.file_name or f"{video.file_unique_id}.mp4"
+        file_path = os.path.join(
+            config_manager.get_config().TG_DOWNLOAD_PATH, file_name
+        )
+
+        await safe_edit_message(reply, f"📥 开始下载视频: {file_name}")
+
+        start_time = time.time()
+        await msg.download(file_name=file_path)
+        end_time = time.time()
+        duration = end_time - start_time
+        duration_str = format_duration(duration)
+        finish_time = time.strftime("%H:%M", time.localtime())
+
+        await safe_edit_message(
+            reply,
+            f"✅ 下载完成！\n"
+            f"文件: {file_name}\n"
+            f"大小: {format_size(video.file_size)}\n"
+            f"完成时间: {finish_time}\n"
+            f"耗时: {duration_str}",
+        )
+        logging.info(f"Telegram post video downloaded: {file_name}")
+
+    except (ValueError, IndexError):
+        await safe_edit_message(
+            reply, "❌ 链接格式不正确，请使用 https://t.me/username/post_id 格式"
+        )
+    except UsernameNotOccupied:
+        await safe_edit_message(reply, "❌ 频道不存在或用户名无效")
+    except ChannelInvalid:
+        await safe_edit_message(reply, "❌ 无法访问该频道，可能已被解散或您无权访问")
+    except MessageIdInvalid:
+        await safe_edit_message(reply, "❌ 消息不存在或已被删除")
+    except Exception as e:
+        await safe_edit_message(reply, f"❌ 下载失败: {str(e)}")
+        logging.error(
+            f"Error downloading telegram post video: {e}, {traceback.format_exc()}"
+        )
+
+
+def format_size(size_bytes: int) -> str:
+    """
+    格式化文件大小
+
+    :param size_bytes: 文件大小（字节）
+    :return: 格式化后的大小字符串
+    """
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
 
 
 @app.on_message(
@@ -810,8 +941,7 @@ async def set_dl_path_callback(client: Client, callback_query: CallbackQuery) ->
         await safe_edit_message(callback_query.message, "Operation cancelled")
     else:
         await safe_edit_message(
-            callback_query.message,
-            "Enter the new download path in 60 seconds: "
+            callback_query.message, "Enter the new download path in 60 seconds: "
         )
         try:
             response = await client.listen(message.chat.id, filters.text, timeout=60)
@@ -840,7 +970,7 @@ async def set_max_parallel_dl_callback(
     else:
         await safe_edit_message(
             callback_query.message,
-            "Enter the new max parallel downloads in 30 seconds: "
+            "Enter the new max parallel downloads in 30 seconds: ",
         )
         try:
             response = await client.listen(message.chat.id, filters.text, timeout=30)
@@ -875,7 +1005,7 @@ async def media_rename_callback(client: Client, callback_query: CallbackQuery) -
             await callback_query.edit_message_reply_markup()
             await safe_edit_message(
                 callback_query.message,
-                "Enter the name in 15 seconds or it will downloading using file_id."
+                "Enter the name in 15 seconds or it will downloading using file_id.",
             )
             try:
                 response = await client.listen(
@@ -892,8 +1022,113 @@ async def media_rename_callback(client: Client, callback_query: CallbackQuery) -
         await callback_query.edit_message_reply_markup()
         await safe_edit_message(
             callback_query.message,
-            "The media's message is not available anymore (too long since input?"
+            "The media's message is not available anymore (too long since input?",
         )
+
+
+@app.on_message(
+    filters.private
+    & filters.user(users=config_manager.get_config().TG_AUTHORIZED_USER_ID)
+    & filters.command("listen_forward")
+)
+async def listen_forward_command(_, message: Message) -> None:
+    logging.info("Executing command /listen_forward")
+    args = message.text.split()
+    if len(args) < 3:
+        await message.reply_text(
+            "**Usage:** `/listen_forward <source_link> <target_link>`\n\n"
+            "Example: `/listen_forward https://t.me/source_channel https://t.me/target_channel`",
+            quote=True,
+        )
+        return
+
+    source_link = args[1]
+    target_link = args[2]
+    listen_key = f"{source_link} {target_link}"
+
+    async def callback_wrapper(client, msg):
+        await forward_listener.listen_forward(client, msg, app)
+
+    success = await forward_listener.add_listen_chat(
+        link=listen_key,
+        listen_chat=forward_listener.listen_forward_chat,
+        callback=callback_wrapper,
+        user_client=app,
+        bot_client=app,
+    )
+
+    if success:
+        await message.reply_text(
+            f"✅ 开始监听转发!\n\n源频道: {source_link}\n目标频道: {target_link}",
+            quote=True,
+        )
+    else:
+        await message.reply_text(
+            f"❌ 该监听已存在，已被移除。请重新发送命令添加。",
+            quote=True,
+        )
+
+
+@app.on_message(
+    filters.private
+    & filters.user(users=config_manager.get_config().TG_AUTHORIZED_USER_ID)
+    & filters.command("stop_listen")
+)
+async def stop_listen_command(_, message: Message) -> None:
+    logging.info("Executing command /stop_listen")
+    args = message.text.split()
+    if len(args) < 2:
+        await message.reply_text(
+            "**Usage:** `/stop_listen <source_link>`\n\n"
+            "Example: `/stop_listen https://t.me/source_channel`",
+            quote=True,
+        )
+        return
+
+    source_link = args[1]
+    removed = []
+
+    keys_to_remove = []
+    for key in forward_listener.listen_forward_chat:
+        if key.startswith(source_link):
+            keys_to_remove.append(key)
+
+    for key in keys_to_remove:
+        await forward_listener.cancel_listen(
+            link=key,
+            listen_chat=forward_listener.listen_forward_chat,
+            user_client=app,
+        )
+        removed.append(key)
+
+    if removed:
+        text = "✅ 已停止以下监听:\n\n" + "\n".join(f"• {k}" for k in removed)
+    else:
+        text = "❌ 未找到匹配的监听器"
+
+    await message.reply_text(text, quote=True)
+
+
+@app.on_message(
+    filters.private
+    & filters.user(users=config_manager.get_config().TG_AUTHORIZED_USER_ID)
+    & filters.command("forward_status")
+)
+async def forward_status_command(_, message: Message) -> None:
+    logging.info("Executing command /forward_status")
+    listeners = forward_listener.listen_forward_chat
+
+    if not listeners:
+        await message.reply_text("📭 当前没有活跃的监听器", quote=True)
+        return
+
+    text = "📡 活跃的监听器:\n\n"
+    for key in listeners:
+        source, target = key.split(" ", 1)
+        text += f"• 源: {source}\n  目标: {target}\n\n"
+
+    text += f"总计: {len(listeners)} 个监听器"
+    await message.reply_text(text, quote=True)
 
 
 app.run(main())
