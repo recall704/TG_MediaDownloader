@@ -13,3 +13,7 @@ temp/
 
 # AI
 AGENTS.md
+.agents/
+.claude/
+.opencode/
+.trellis/
