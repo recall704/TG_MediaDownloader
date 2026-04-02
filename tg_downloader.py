@@ -2,30 +2,29 @@ import argparse
 import asyncio
 import logging
 import os
+import signal
 import sys
 import traceback
 from asyncio import Task, Queue
 from pathlib import Path
 
 from pyrogram import Client, filters
-from pyrogram.types import Message
-
 from pyrogram.enums import ParseMode
-from pyrogram.methods.utilities.idle import idle
 from pyrogram.raw.functions.bots import SetBotCommands
 from pyrogram.raw.types import BotCommand, BotCommandScopeDefault
+from pyrogram.types import Message
 
+from modules import forward_listener
 from modules.ConfigManager import ConfigManager
 from modules.helpers import get_config_from_user_or_env, safe_edit_message
 from modules.models.ConfigFile import ConfigFile
-from modules import forward_listener
 from modules.plugins.base import BasePlugin
+from modules.plugins.command_plugin.command_plugin import CommandPlugin
+from modules.plugins.greenvideo_plugin import GreenVideoPlugin
+from modules.plugins.media_plugin import MediaPlugin
 from modules.plugins.registry import PluginRegistry
 from modules.plugins.router import PluginRouter
-from modules.plugins.media_plugin import MediaPlugin
-from modules.plugins.greenvideo_plugin import GreenVideoPlugin
 from modules.plugins.telegram_post_plugin import TelegramPostVideoPlugin
-from modules.plugins.command_plugin.command_plugin import CommandPlugin
 
 GITHUB_LINK: str = "https://github.com/LightDestory/TG_MediaDownloader"
 DONATION_LINK: str = "https://ko-fi.com/lightdestory"
@@ -107,17 +106,37 @@ def init() -> Client | None:
     plugin_router.register_plugin(telegram_post_plugin)
     plugin_router.register_plugin(greenvideo_plugin)
 
-    generate_workers()
-
     return client
+
+
+async def graceful_shutdown() -> None:
+    """
+    Handle graceful shutdown by cancelling tasks and cleaning up plugins.
+    """
+    logging.info("Shutdown signal received, cleaning up...")
+    await abort(kill_workers=True)
+    for plugin in plugin_registry.get_all():
+        await plugin.cleanup()
+    logging.info("Cleanup complete!")
 
 
 async def main() -> None:
     """
     Entrypoint of the bot runtime
     """
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+
+    def signal_handler():
+        if not stop_event.is_set():
+            stop_event.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, signal_handler)
+
     try:
         logging.info("Bot is starting...")
+        generate_workers()
         await app.start()
         logging.info("Settings Bot commands list...")
         await app.invoke(
@@ -128,16 +147,12 @@ async def main() -> None:
             )
         )
         logging.info("Bot is running... =================================")
-        await idle()
+        await stop_event.wait()
         logging.info("Bot is stopping...")
-        await app.stop()
-        logging.info("Bot stopped!")
     except Exception as ex:
         logging.error(f"Unable to start Pyrogram client, error:\n {ex}")
     finally:
-        await abort(kill_workers=True)
-        for plugin in plugin_registry.get_all():
-            await plugin.cleanup()
+        await graceful_shutdown()
 
 
 def generate_workers() -> None:
@@ -145,8 +160,7 @@ def generate_workers() -> None:
     Create a single worker task for the global queue.
     Queue size is 1, so only one worker is needed.
     """
-    loop = asyncio.get_event_loop_policy().get_event_loop()
-    workers.append(loop.create_task(worker()))
+    workers.append(asyncio.create_task(worker()))
 
 
 async def enqueue_job(message: Message, reply: Message, plugin: BasePlugin) -> None:
@@ -177,7 +191,7 @@ async def worker() -> None:
 
             logging.info(f"Worker processing job with plugin: {plugin.name}")
 
-            task = asyncio.get_event_loop().create_task(plugin.execute(message, reply))
+            task = asyncio.create_task(plugin.execute(message, reply))
             tasks.append(task)
 
             await asyncio.wait_for(
@@ -207,7 +221,8 @@ async def abort(kill_workers: bool = False) -> None:
     if tasks or not queue.empty():
         logging.info("Aborting all the pending jobs")
         for t in tasks:
-            t.cancel()
+            if not t.done():
+                t.cancel()
         while not queue.empty():
             try:
                 job = queue.get_nowait()
@@ -221,7 +236,10 @@ async def abort(kill_workers: bool = False) -> None:
     if kill_workers:
         logging.info("Killing all the workers")
         for w in workers:
-            w.cancel()
+            if not w.done():
+                w.cancel()
+        if workers:
+            await asyncio.gather(*workers, return_exceptions=True)
 
 
 app = init()
