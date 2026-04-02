@@ -9,7 +9,7 @@ import logging
 import os
 import time
 
-from pyrogram.errors import MessageNotModified
+from pyrogram.errors import MessageNotModified, FloodWait
 from pyrogram.enums import MessageMediaType
 from pyrogram.types import Message, Photo, Voice, Video, Animation, Audio, Document
 
@@ -143,11 +143,12 @@ class MediaPlugin(BasePlugin):
             logging.info(f"{file_name} - Download started")
             await self._safe_edit(reply, "Downloading:  0%")
 
+            progress_state: list[Message | int] = [reply, 0]
             task = asyncio.get_event_loop().create_task(
                 message.download(
                     file_path,
                     progress=self._progress_callback,
-                    progress_args=([reply],),
+                    progress_args=(progress_state,),
                 )
             )
 
@@ -227,19 +228,43 @@ class MediaPlugin(BasePlugin):
         return None
 
     @staticmethod
-    async def _progress_callback(current, total, reply: list[Message]) -> None:
+    async def _progress_callback(
+        current: int, total: int, reply: list[Message | int]
+    ) -> None:
         """
         Update download progress on the reply message.
 
         :param current: Current bytes downloaded
         :param total: Total bytes to download
-        :param reply: List containing the reply message (mutable for updates)
+        :param reply: List containing [message, last_reported_status] (mutable for updates)
         """
-        from tg_downloader import safe_edit_message
+        from modules.helpers import safe_edit_message
+
+        if total == 0:
+            return
 
         status = int(current * 100 / total)
         message = reply[0]
-        if status != 0 and status % 5 == 0 and str(status) not in message.text:
+
+        if status == 0 or status % 5 != 0:
+            return
+
+        last_reported = reply[1] if len(reply) > 1 else 0
+        if status == last_reported:
+            return
+
+        if not isinstance(message, Message) or message.text is None:
+            return
+
+        try:
             result = await safe_edit_message(message, f"Downloading: {status}%")
             if result:
                 reply[0] = result
+                if len(reply) > 1:
+                    reply[1] = status
+                else:
+                    reply.append(status)
+        except (MessageNotModified, FloodWait):
+            pass
+        except Exception as e:
+            logging.debug(f"Progress edit failed (non-fatal): {e}")

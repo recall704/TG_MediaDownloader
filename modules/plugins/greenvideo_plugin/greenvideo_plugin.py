@@ -179,7 +179,7 @@ class GreenVideoPlugin(BasePlugin):
         :param file_info: File information dictionary
         :param reply_message: Reply message for progress updates
         """
-        from tg_downloader import safe_edit_message
+        from modules.helpers import safe_edit_message
 
         if total > 0:
             progress = int(current * 100 / total)

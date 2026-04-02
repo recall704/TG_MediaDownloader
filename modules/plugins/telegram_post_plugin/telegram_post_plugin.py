@@ -11,7 +11,13 @@ import time
 from urllib.parse import urlparse
 
 from pyrogram import Client
-from pyrogram.errors import MessageIdInvalid, ChannelInvalid, UsernameNotOccupied
+from pyrogram.errors import (
+    MessageIdInvalid,
+    ChannelInvalid,
+    UsernameNotOccupied,
+    MessageNotModified,
+    FloodWait,
+)
 from pyrogram.types import Message
 
 from modules.plugins.base import BasePlugin
@@ -150,10 +156,17 @@ class TelegramPostVideoPlugin(BasePlugin):
                 self._config_manager.get_config().TG_DOWNLOAD_PATH, file_name
             )
 
-            await self._safe_edit(reply, f"📥 开始下载视频: {file_name}")
+            await self._safe_edit(
+                reply, f"📥 开始下载视频: {file_name}\nDownloading: 0%"
+            )
 
             start_time = time.time()
-            await msg.download(file_name=file_path)
+            progress_state: list[Message | int] = [reply, 0]
+            await msg.download(
+                file_name=file_path,
+                progress=self._progress_callback,
+                progress_args=(progress_state,),
+            )
             end_time = time.time()
             duration = end_time - start_time
             duration_str = format_duration(duration)
@@ -190,3 +203,45 @@ class TelegramPostVideoPlugin(BasePlugin):
             logging.error(
                 f"Error downloading telegram post video: {e}, {traceback.format_exc()}"
             )
+
+    @staticmethod
+    async def _progress_callback(
+        current: int, total: int, reply: list[Message | int]
+    ) -> None:
+        """
+        Update download progress on the reply message.
+
+        :param current: Current bytes downloaded
+        :param total: Total bytes to download
+        :param reply: List containing [message, last_reported_status] (mutable for updates)
+        """
+        from modules.helpers import safe_edit_message
+
+        if total == 0:
+            return
+
+        status = int(current * 100 / total)
+        message = reply[0]
+
+        if status == 0 or status % 5 != 0:
+            return
+
+        last_reported = reply[1] if len(reply) > 1 else 0
+        if status == last_reported:
+            return
+
+        if not isinstance(message, Message) or message.text is None:
+            return
+
+        try:
+            result = await safe_edit_message(message, f"Downloading: {status}%")
+            if result:
+                reply[0] = result
+                if len(reply) > 1:
+                    reply[1] = status
+                else:
+                    reply.append(status)
+        except (MessageNotModified, FloodWait):
+            pass
+        except Exception as e:
+            logging.debug(f"Progress edit failed (non-fatal): {e}")

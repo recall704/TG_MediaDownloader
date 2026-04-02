@@ -212,7 +212,7 @@ class TestExtractVideoWithInterceptionRetry(unittest.IsolatedAsyncioTestCase):
 
     async def test_success_without_retry(self):
         """测试成功时不需要重试"""
-        mock_result = {
+        _mock_result = {
             "vid": "test123",
             "host": "douyin",
             "host_alias": "抖音",

@@ -1,17 +1,22 @@
-.idea/
-tg_downloader.session*
-tg_downloader.log
-.vscode/
-venv/
-.venv/
-config.json
-temp/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[codz]
+*$py.class
 **/__pycache__/**
 
-# Project
+# Environments
 .env
-.ruff_cache/
-.pytest_cache/
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Editor
+.idea/
+.vscode/
 
 # AI
 AGENTS.md
@@ -19,3 +24,11 @@ AGENTS.md
 .claude/
 .opencode/
 .trellis/
+
+# Project
+config.json
+.ruff_cache/
+.pytest_cache/
+temp/
+tg_downloader.session*
+tg_downloader.log

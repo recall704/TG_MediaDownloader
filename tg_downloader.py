@@ -3,24 +3,20 @@ import asyncio
 import logging
 import os
 import sys
-import time
 import traceback
 from asyncio import Task, Queue
 from pathlib import Path
 
 from pyrogram import Client, filters
-from pyrogram.errors import MessageNotModified, FloodWait
-from pyrogram.types import (
-    Message,
-)
-from pyrogram.enums import ParseMode
+from pyrogram.types import Message
 
+from pyrogram.enums import ParseMode
 from pyrogram.methods.utilities.idle import idle
 from pyrogram.raw.functions.bots import SetBotCommands
 from pyrogram.raw.types import BotCommand, BotCommandScopeDefault
 
 from modules.ConfigManager import ConfigManager
-from modules.helpers import get_config_from_user_or_env
+from modules.helpers import get_config_from_user_or_env, safe_edit_message
 from modules.models.ConfigFile import ConfigFile
 from modules import forward_listener
 from modules.plugins.base import BasePlugin
@@ -54,63 +50,6 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout),
     ],
 )
-
-_message_edit_locks: dict[int, float] = {}
-_MIN_EDIT_INTERVAL: float = 1.0
-
-
-async def safe_edit_message(
-    message: Message,
-    text: str,
-    max_retries: int = 3,
-) -> Message | None:
-    """
-    Safely edit a message with FloodWait handling and retry mechanism.
-
-    Args:
-        message: The message to edit
-        text: New text content
-        max_retries: Maximum retry attempts
-
-    Returns:
-        The edited message, or None on failure
-    """
-    chat_id = message.chat.id
-    msg_id = message.id
-    current_time = time.time()
-
-    if chat_id in _message_edit_locks:
-        last_edit_time = _message_edit_locks[chat_id]
-        wait_time = _MIN_EDIT_INTERVAL - (current_time - last_edit_time)
-        if wait_time > 0:
-            logging.info(
-                f"Rate limiting: waiting {wait_time:.1f}s before editing message {msg_id}"
-            )
-            await asyncio.sleep(wait_time)
-
-    for attempt in range(max_retries):
-        try:
-            _message_edit_locks[chat_id] = time.time()
-            result = await message.edit(text)
-            return result
-        except FloodWait as e:
-            wait_seconds = e.value
-            logging.warning(
-                f"FloodWait detected for message {msg_id}, "
-                f"waiting {wait_seconds}s (attempt {attempt + 1}/{max_retries})"
-            )
-            if attempt < max_retries - 1:
-                await asyncio.sleep(wait_seconds)
-            else:
-                logging.error(f"FloodWait: Max retries reached for message {msg_id}")
-                return None
-        except MessageNotModified:
-            return None
-        except Exception as e:
-            logging.error(f"Error editing message {msg_id}: {e}")
-            return None
-
-    return None
 
 
 def init() -> Client | None:
