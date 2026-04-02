@@ -10,11 +10,11 @@
   </a>
 
   <h2 align="center">TG Media Downloader Bot 🤖</h2>
-  
+
   <p align="center">
 A simple MTProto-based bot that can download various types of media (>10MB) on a local storage
   </p>
-  
+
   <br />
   <br />
 
@@ -100,7 +100,7 @@ The bot can be executed inside a Docker container or directly on your PC/Server 
         An official GitHub Package is
         available <a href="https://github.com/LightDestory/TG_MediaDownloader/pkgs/container/tg_mediadownloader">here</a>.<br><br>
         <i>Make sure that the download path is a mounted as a volume to allow the host system to access the downloaded files.</i>
-        
+
 </details>
 
 <details>
@@ -133,20 +133,20 @@ Make sure that the path for the volume is fully existing and you have access. <b
       <summary>Barebone</summary>
         To run the bot directly on your PC/Server OS, do the following steps:
 
-  
+
 1) Make sure to have Python 3.10+ installed on your system;
 2) Create a folder anywhere on your pc and clone the repository there:
 
    `git clone https://github.com/LightDestory/TG_MediaDownloader`
 
-3) Install the requirements (create a `venv` if you don't want to dirty the system packages): 
+3) Install the requirements (create a `venv` if you don't want to dirty the system packages):
 
    `pip install -r requirements.txt`
 
 4) Execute the bot and follow the wizard to provide the requires parameters:
 
    `python ./tg_downloader.py`
-   
+
 </details>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -249,3 +249,28 @@ The content of this repository is distributed under the GNU GPL-3.0 License. See
 - [Pyrogram](https://github.com/pyrogram/pyrogram)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Features Added by recall704
+
+- Migrated to use `uv` for dependency management and execution
+- Added GreenVideo plugin for downloading videos from Bilibili and Douyin
+- Added support for downloading forwarded Telegram videos
+- Added support for downloading videos from Telegram message links (e.g., `https://t.me/xxxx/72`)
+- Refactored to a plugin-based architecture for easy extensibility
+
+### Running Locally
+```bash
+uv sync
+uv run patchright install-deps
+uv run patchright install
+
+uv run --group dev python tg_downloader.py --reload
+```
+
+### Running with Docker
+```bash
+./run_build.sh
+
+# Update the image version in docker-compose.yml to match the built version
+docker-compose up -d
+```
