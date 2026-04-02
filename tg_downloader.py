@@ -40,6 +40,7 @@ from modules.plugins.router import PluginRouter
 from modules.plugins.media_plugin import MediaPlugin
 from modules.plugins.greenvideo_plugin import GreenVideoPlugin
 from modules.plugins.telegram_post_plugin import TelegramPostVideoPlugin
+from modules.plugins.command_plugin.command_plugin import CommandPlugin
 
 GITHUB_LINK: str = "https://github.com/LightDestory/TG_MediaDownloader"
 DONATION_LINK: str = "https://ko-fi.com/lightdestory"
@@ -161,11 +162,19 @@ def init() -> Client | None:
         client=client,
         safe_edit=safe_edit_message,
     )
+    command_plugin = CommandPlugin(
+        config_manager=config_manager,
+        safe_edit=safe_edit_message,
+        abort_callback=abort,
+        forward_listener_module=forward_listener,
+    )
 
     plugin_registry.register(media_plugin)
     plugin_registry.register(telegram_post_plugin)
     plugin_registry.register(greenvideo_plugin)
+    plugin_registry.register(command_plugin)
 
+    plugin_router.register_plugin(command_plugin)
     plugin_router.register_plugin(media_plugin)
     plugin_router.register_plugin(telegram_post_plugin)
     plugin_router.register_plugin(greenvideo_plugin)
@@ -290,6 +299,67 @@ async def abort(kill_workers: bool = False) -> None:
 app = init()
 
 
+@app.on_message(
+    filters.private
+    & filters.user(users=config_manager.get_config().TG_AUTHORIZED_USER_ID)
+)
+async def handle_message(client: Client, message: Message) -> None:
+    """
+    Main message handler that routes incoming messages to the appropriate plugin.
+    """
+    logging.info(f"Received message from authorized user: {message.from_user.id}")
+
+    plugin = plugin_router.classify(message)
+    if plugin:
+        logging.info(f"Message routed to plugin: {plugin.name}")
+        reply = await message.reply_text(f"Queueing with {plugin.name}...", quote=True)
+        await enqueue_job(message, reply, plugin)
+    else:
+        logging.warning(f"No plugin matched message: {message.media or message.text}")
+        await message.reply_text("Unsupported message type.", quote=True)
+
+
+def get_command_list() -> list[BotCommand]:
+    """
+    Return the list of implemented bot commands.
+    :return: A list of BotCommands
+    """
+    return [
+        BotCommand(
+            command="start",
+            description="Initial command when you start the chat with the bot for the first time.",
+        ),
+        BotCommand(
+            command="help", description="Gives you the available commands list."
+        ),
+        BotCommand(
+            command="about", description="Gives you information about the project."
+        ),
+        BotCommand(command="abort", description="Cancel all the pending downloads."),
+        BotCommand(
+            command="status", description="Gives you the current configuration."
+        ),
+        BotCommand(command="usage", description="Gives you the usage instructions."),
+        BotCommand(command="set_download_dir", description="Sets a new download dir"),
+        BotCommand(
+            command="set_max_parallel_dl",
+            description="Sets the number of max parallel downloads",
+        ),
+        BotCommand(
+            command="listen_forward",
+            description="Start listening to a channel and forward messages to target",
+        ),
+        BotCommand(
+            command="stop_listen",
+            description="Stop listening to a channel",
+        ),
+        BotCommand(
+            command="forward_status",
+            description="Show active forward listeners",
+        ),
+    ]
+
+
 def run_bot() -> None:
     """
     Start the bot's event loop.
@@ -329,7 +399,8 @@ if __name__ == "__main__":
         logging.info("Starting in reload mode, watching for file changes...")
         run_process(
             project_root,
-            target="tg_downloader:run_bot",
+            target="tg_downloader.run_bot",
+            target_type="function",
             watch_filter=PythonFilter(),
             recursive=True,
         )
