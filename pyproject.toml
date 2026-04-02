@@ -15,3 +15,8 @@ dependencies = [
     "requests>=2.32.5",
     "tgcrypto==1.2.5",
 ]
+
+[dependency-groups]
+dev = [
+    "watchfiles>=1.0.0",
+]
