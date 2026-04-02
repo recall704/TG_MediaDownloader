@@ -8,22 +8,12 @@ import traceback
 from asyncio import Task, Queue
 from pathlib import Path
 
-import pyroaddon
 from pyrogram import Client, filters
 from pyrogram.errors import MessageNotModified, FloodWait
 from pyrogram.types import (
     Message,
-    Photo,
-    Voice,
-    Video,
-    Animation,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    CallbackQuery,
-    Audio,
-    Document,
 )
-from pyrogram.enums import ParseMode, MessageMediaType
+from pyrogram.enums import ParseMode
 
 from pyrogram.methods.utilities.idle import idle
 from pyrogram.raw.functions.bots import SetBotCommands
@@ -32,7 +22,6 @@ from pyrogram.raw.types import BotCommand, BotCommandScopeDefault
 from modules.ConfigManager import ConfigManager
 from modules.helpers import get_config_from_user_or_env
 from modules.models.ConfigFile import ConfigFile
-from modules.utils import extract
 from modules import forward_listener
 from modules.plugins.base import BasePlugin
 from modules.plugins.registry import PluginRegistry
