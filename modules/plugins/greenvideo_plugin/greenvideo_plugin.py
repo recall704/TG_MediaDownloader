@@ -14,7 +14,7 @@ from pyrogram.types import Message
 from modules.plugins.base import BasePlugin
 from modules.ConfigManager import ConfigManager
 from modules.utils import extract
-from modules.tools.greenvideo.playwright_downloader import (
+from modules.plugins.greenvideo_plugin.playwright_downloader import (
     PlaywrightGreenVideoDownloader,
 )
 
