@@ -1,19 +1,19 @@
 import logging
 import os
 import traceback
-from typing import Callable
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 import pyrogram
 from pyrogram import Client, filters
+from pyrogram.enums import MessageMediaType
 from pyrogram.errors import (
-    PeerIdInvalid,
     ChatForwardsRestricted,
     ChatWriteForbidden,
+    PeerIdInvalid,
     UsernameNotOccupied,
 )
 from pyrogram.types import Message
-from pyrogram.enums import MessageMediaType
 
 listen_forward_chat: dict[str, object] = {}
 handle_media_groups: dict[int, set] = {}
@@ -173,10 +173,7 @@ async def add_listen_chat(
             topic_id = meta.get("topic_id")
             chat_id = meta.get("chat_id")
 
-            if topic_id:
-                f = filters.chat(chat_id) & filters.topic(topic_id)
-            else:
-                f = filters.chat(chat_id)
+            f = filters.chat(chat_id) & filters.topic(topic_id) if topic_id else filters.chat(chat_id)
 
             handler = pyrogram.handlers.MessageHandler(callback, filters=f)
             listen_chat[link] = handler

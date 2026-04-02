@@ -20,7 +20,7 @@ class PluginRouter:
     """
 
     def __init__(self) -> None:
-        self._plugins: list["BasePlugin"] = []
+        self._plugins: list[BasePlugin] = []
 
     def register_plugin(self, plugin: "BasePlugin") -> None:
         """

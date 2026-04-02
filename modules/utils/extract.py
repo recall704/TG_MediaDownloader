@@ -4,13 +4,12 @@ URL 解析模块
 从字符串中提取 URL
 """
 
-import re
 import argparse
-from typing import Optional
+import re
 from urllib.parse import urlparse
 
 
-def extract_url(text: str) -> Optional[str]:
+def extract_url(text: str) -> str | None:
     """
     从字符串中提取 URL
 
@@ -48,7 +47,7 @@ def is_telegram_link(url: str) -> bool:
         return False
 
 
-def extract_magnet(text: str) -> Optional[str]:
+def extract_magnet(text: str) -> str | None:
     """
     从字符串中提取磁力链接
 

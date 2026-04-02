@@ -5,6 +5,7 @@
 import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
+
 from modules.plugins.greenvideo_plugin.playwright_downloader import (
     PlaywrightGreenVideoDownloader,
 )
@@ -165,9 +166,9 @@ class TestSanitizeFilename(unittest.TestCase):
     def test_unicode_characters(self):
         """测试Unicode字符"""
         test_cases = [
-            ("视频测试", "视频测试".encode("utf-8")),
-            ("🎥video🎬", "🎥video🎬".encode("utf-8")),
-            ("αβγδε", "αβγδε".encode("utf-8")),
+            ("视频测试", "视频测试".encode()),
+            ("🎥video🎬", "🎥video🎬".encode()),
+            ("αβγδε", "αβγδε".encode()),
         ]
 
         for input_name, expected in test_cases:
@@ -269,7 +270,7 @@ class TestExtractVideoWithInterceptionRetry(unittest.IsolatedAsyncioTestCase):
             async def mock_launch(*args, **kwargs):
                 call_count[0] += 1
                 if call_count[0] <= 2:
-                    raise asyncio.TimeoutError("Browser launch timeout")
+                    raise TimeoutError("Browser launch timeout")
                 mock_browser = AsyncMock()
                 mock_page = AsyncMock()
                 mock_browser.new_page.return_value = mock_page

@@ -1,11 +1,12 @@
 import argparse
 import asyncio
+import contextlib
 import logging
 import os
 import signal
 import sys
 import traceback
-from asyncio import Task, Queue
+from asyncio import Queue, Task
 from pathlib import Path
 
 from pyrogram import Client, filters
@@ -203,10 +204,8 @@ async def worker() -> None:
         except Exception as e:
             logging.error(f"Error in worker: {e}, {traceback.format_exc()}")
             if job and job.get("reply"):
-                try:
+                with contextlib.suppress(Exception):
                     await safe_edit_message(job["reply"], f"下载失败: {str(e)}")
-                except Exception:
-                    pass
         finally:
             if job is not None:
                 queue.task_done()
@@ -334,7 +333,7 @@ if __name__ == "__main__":
 
     if args.reload:
         try:
-            from watchfiles import run_process, PythonFilter
+            from watchfiles import PythonFilter, run_process
         except ImportError:
             logging.error(
                 "watchfiles is not installed. Install it with: uv sync --group dev"

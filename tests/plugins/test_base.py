@@ -2,8 +2,9 @@
 Tests for the plugin base class and registry.
 """
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from modules.plugins.base import BasePlugin
 from modules.plugins.registry import PluginRegistry

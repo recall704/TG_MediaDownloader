@@ -3,7 +3,7 @@ Tests for the MediaPlugin.
 """
 
 import asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pyrogram.enums import MessageMediaType
@@ -260,12 +260,10 @@ class TestMediaPluginExecute:
         reply.text = "In queue"
 
         async def run_test():
-            with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+            with patch("asyncio.wait_for", side_effect=TimeoutError()):
                 await self.plugin.execute(message, reply)
 
-            self.safe_edit.assert_any_call(
-                reply, "**ERROR:** __Timeout reached downloading this file__"
-            )
+            self.safe_edit.assert_any_call(reply, "**ERROR:** __Timeout reached downloading this file__")
 
         asyncio.get_event_loop().run_until_complete(run_test())
 
@@ -282,9 +280,11 @@ class TestMediaPluginExecute:
         reply.text = "In queue"
 
         async def run_test():
-            with patch("asyncio.wait_for", side_effect=asyncio.CancelledError()):
-                with pytest.raises(asyncio.CancelledError):
-                    await self.plugin.execute(message, reply)
+            with (
+                patch("asyncio.wait_for", side_effect=asyncio.CancelledError()),
+                pytest.raises(asyncio.CancelledError),
+            ):
+                await self.plugin.execute(message, reply)
 
             self.safe_edit.assert_any_call(reply, "Aborted")
 
@@ -307,9 +307,7 @@ class TestMediaPluginExecute:
                 await self.plugin.execute(message, reply)
 
             calls = [call[0] for call in self.safe_edit.call_args_list]
-            error_call_found = any(
-                "ERROR" in str(call) and "Test error" in str(call) for call in calls
-            )
+            error_call_found = any("ERROR" in str(call) and "Test error" in str(call) for call in calls)
             assert error_call_found
 
         asyncio.get_event_loop().run_until_complete(run_test())

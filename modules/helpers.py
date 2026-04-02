@@ -131,3 +131,25 @@ def is_json(file: Path) -> bool:
     :return: True if the file's extension is json, False otherwise
     """
     return file.name.split(".")[-1] == "json"
+
+
+def format_duration(seconds: float) -> str:
+    """
+    Format a duration in seconds to a human-readable format.
+
+    :param seconds: Duration in seconds
+    :return: A human-readable string (e.g., "2h 15m 30s", "45s", "5m 20s")
+    """
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+
+    parts = []
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if secs > 0 or not parts:
+        parts.append(f"{secs}s")
+
+    return " ".join(parts)

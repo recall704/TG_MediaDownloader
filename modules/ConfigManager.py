@@ -20,7 +20,7 @@ class ConfigManager:
         :return: A ConfigFile instance if the provided file is valid, None otherwise
         """
         if self._config_path.exists() and self._config_path.is_file() and is_json(self._config_path):
-            with open(self._config_path, mode="r") as config_fp:
+            with open(self._config_path) as config_fp:
                 try:
                     self._config = json.load(config_fp, object_hook=ConfigFile)
                     if self.validate_config(self._config):
@@ -72,9 +72,7 @@ class ConfigManager:
         if not config.TG_SESSION or not config.TG_API_HASH or not config.TG_AUTHORIZED_USER_ID \
                 or not config.TG_BOT_TOKEN or not config.TG_DOWNLOAD_PATH:
             return False
-        if not self._validate_download_path(Path(config.TG_DOWNLOAD_PATH)):
-            return False
-        return True
+        return self._validate_download_path(Path(config.TG_DOWNLOAD_PATH))
 
     def _validate_download_path(self, download_path: Path) -> bool:
         """

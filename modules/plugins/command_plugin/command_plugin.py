@@ -6,10 +6,10 @@ Handles all text-based bot commands that don't involve media downloads.
 
 import logging
 
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-from modules.plugins.base import BasePlugin
 from modules.ConfigManager import ConfigManager
+from modules.plugins.base import BasePlugin
 
 GITHUB_LINK: str = "https://github.com/LightDestory/TG_MediaDownloader"
 DONATION_LINK: str = "https://ko-fi.com/lightdestory"
@@ -331,7 +331,7 @@ class CommandPlugin(BasePlugin):
                 return
 
             text = "**Active Forward Listeners:**\n\n"
-            for key, value in listen_chat.items():
+            for key, _value in listen_chat.items():
                 parts = key.split(" ", 1)
                 source = parts[0] if len(parts) > 0 else key
                 target = parts[1] if len(parts) > 1 else "unknown"

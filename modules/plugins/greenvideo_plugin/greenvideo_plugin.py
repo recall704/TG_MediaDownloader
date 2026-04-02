@@ -11,12 +11,13 @@ import time
 
 from pyrogram.types import Message
 
-from modules.plugins.base import BasePlugin
 from modules.ConfigManager import ConfigManager
-from modules.utils import extract
+from modules.helpers import format_duration
+from modules.plugins.base import BasePlugin
 from modules.plugins.greenvideo_plugin.playwright_downloader import (
     PlaywrightGreenVideoDownloader,
 )
+from modules.utils import extract
 
 
 def format_size(size_bytes: int) -> str:
@@ -81,10 +82,7 @@ class GreenVideoPlugin(BasePlugin):
         if not url:
             return False
 
-        if extract.is_telegram_link(url):
-            return False
-
-        return True
+        return not extract.is_telegram_link(url)
 
     async def execute(self, message: Message, reply: Message) -> None:
         """
@@ -122,6 +120,8 @@ class GreenVideoPlugin(BasePlugin):
                 f"开始下载...",
             )
 
+            start_time = time.time()
+
             async def progress_callback(
                 current: int, total: int, file_info: dict
             ) -> None:
@@ -135,16 +135,20 @@ class GreenVideoPlugin(BasePlugin):
             )
 
             if downloaded_files:
+                end_time = time.time()
+                duration = end_time - start_time
+                duration_str = format_duration(duration)
                 finish_time = time.strftime("%H:%M", time.localtime())
                 result_text = (
                     f"✅ 下载完成！\n"
                     f"完成时间: {finish_time}\n"
+                    f"耗时: {duration_str}\n"
                     f"成功下载 {len(downloaded_files)} 个文件:\n"
                 )
                 for filepath in downloaded_files:
                     result_text += f"  • {filepath}\n"
 
-                await self._safe_edit(reply, result_text)
+                await self._safe_edit(reply, result_text.strip())
                 logging.info(
                     f"Successfully downloaded {len(downloaded_files)} files from {url}"
                 )
@@ -152,7 +156,7 @@ class GreenVideoPlugin(BasePlugin):
                 await self._safe_edit(reply, "❌ 下载失败")
                 logging.error(f"Failed to download video from {url}")
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             await self._safe_edit(reply, "❌ 下载超时")
             logging.error(f"Timeout downloading video from {url}")
         except asyncio.CancelledError:

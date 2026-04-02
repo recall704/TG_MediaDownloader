@@ -9,34 +9,13 @@ import logging
 import os
 import time
 
-from pyrogram.errors import MessageNotModified, FloodWait
 from pyrogram.enums import MessageMediaType
-from pyrogram.types import Message, Photo, Voice, Video, Animation, Audio, Document
+from pyrogram.errors import FloodWait, MessageNotModified
+from pyrogram.types import Animation, Audio, Document, Message, Photo, Video, Voice
 
-from modules.plugins.base import BasePlugin
 from modules.ConfigManager import ConfigManager
-
-
-def format_duration(seconds: float) -> str:
-    """
-    Format a duration in seconds to a human-readable format.
-
-    :param seconds: Duration in seconds
-    :return: A human-readable string (e.g., "2h 15m 30s", "45s", "5m 20s")
-    """
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-
-    parts = []
-    if hours > 0:
-        parts.append(f"{hours}h")
-    if minutes > 0:
-        parts.append(f"{minutes}m")
-    if secs > 0 or not parts:
-        parts.append(f"{secs}s")
-
-    return " ".join(parts)
+from modules.helpers import format_duration
+from modules.plugins.base import BasePlugin
 
 
 def get_extension(
@@ -114,10 +93,7 @@ class MediaPlugin(BasePlugin):
         if message.media is None:
             return False
 
-        if message.media in self.UNSUPPORTED_TYPES:
-            return False
-
-        return True
+        return message.media not in self.UNSUPPORTED_TYPES
 
     async def execute(self, message: Message, reply: Message) -> None:
         """
@@ -165,14 +141,15 @@ class MediaPlugin(BasePlugin):
 
             finish_time = time.strftime("%H:%M", time.localtime())
             await self._safe_edit(
-                reply, f"Finished at {finish_time}\nDuration: {duration_str}"
+                reply,
+                f"Finished at {finish_time}\nDuration: {duration_str}\nPath: {file_path}",
             )
 
         except asyncio.CancelledError:
             logging.warning(f"{file_name} - Aborted")
             await self._safe_edit(reply, "Aborted")
             raise
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logging.error(f"{file_name} - TIMEOUT ERROR")
             await self._safe_edit(
                 reply, "**ERROR:** __Timeout reached downloading this file__"

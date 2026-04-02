@@ -18,7 +18,7 @@ class PluginRegistry:
     """
 
     def __init__(self) -> None:
-        self._plugins: list["BasePlugin"] = []
+        self._plugins: list[BasePlugin] = []
 
     def register(self, plugin: "BasePlugin") -> None:
         """

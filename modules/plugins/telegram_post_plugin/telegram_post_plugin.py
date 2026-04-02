@@ -12,16 +12,17 @@ from urllib.parse import urlparse
 
 from pyrogram import Client
 from pyrogram.errors import (
-    MessageIdInvalid,
     ChannelInvalid,
-    UsernameNotOccupied,
-    MessageNotModified,
     FloodWait,
+    MessageIdInvalid,
+    MessageNotModified,
+    UsernameNotOccupied,
 )
 from pyrogram.types import Message
 
-from modules.plugins.base import BasePlugin
 from modules.ConfigManager import ConfigManager
+from modules.helpers import format_duration
+from modules.plugins.base import BasePlugin
 from modules.utils import extract
 
 
@@ -40,28 +41,6 @@ def format_size(size_bytes: int) -> str:
         return f"{size_bytes / (1024 * 1024):.1f} MB"
     else:
         return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
-
-
-def format_duration(seconds: float) -> str:
-    """
-    Format a duration in seconds to a human-readable format.
-
-    :param seconds: Duration in seconds
-    :return: A human-readable string (e.g., "2h 15m 30s")
-    """
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-
-    parts = []
-    if hours > 0:
-        parts.append(f"{hours}h")
-    if minutes > 0:
-        parts.append(f"{minutes}m")
-    if secs > 0 or not parts:
-        parts.append(f"{secs}s")
-
-    return " ".join(parts)
 
 
 class TelegramPostVideoPlugin(BasePlugin):
@@ -123,7 +102,7 @@ class TelegramPostVideoPlugin(BasePlugin):
         """
         url = extract.extract_url(message.text)
 
-        await self._safe_edit(reply, "🔍 正在解析帖子链接...")
+        await self._safe_edit(reply, "🔍 正在解析链接...")
 
         try:
             parsed = urlparse(url)
@@ -178,7 +157,8 @@ class TelegramPostVideoPlugin(BasePlugin):
                 f"文件: {file_name}\n"
                 f"大小: {format_size(video.file_size)}\n"
                 f"完成时间: {finish_time}\n"
-                f"耗时: {duration_str}",
+                f"耗时: {duration_str}\n"
+                f"路径: {file_path}",
             )
             logging.info(f"Telegram post video downloaded: {file_name}")
 

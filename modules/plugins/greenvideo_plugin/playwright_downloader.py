@@ -131,7 +131,7 @@ class PlaywrightGreenVideoDownloader:
                         )
                         logging.info("收到成功响应")
                         await asyncio.sleep(1.0)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         logging.warning("等待响应超时，使用已记录的响应")
 
                     await browser.close()
@@ -171,7 +171,7 @@ class PlaywrightGreenVideoDownloader:
                     # 没有成功响应，可能是临时错误，继续重试
                     raise Exception("未获取到有效的API响应")
 
-            except asyncio.TimeoutError as e:
+            except TimeoutError as e:
                 last_error = e
                 retry_count += 1
                 if retry_count <= self.max_retries:
@@ -319,7 +319,7 @@ class PlaywrightGreenVideoDownloader:
             import time
 
             timestamp = str(int(time.time()))
-            safe_name_bytes = f"video_{timestamp}".encode("utf-8")
+            safe_name_bytes = f"video_{timestamp}".encode()
             final_filename_bytes = safe_name_bytes + ext.encode("utf-8")
             logging.error("文件名过长，使用时间戳代替")
 
@@ -514,7 +514,7 @@ class PlaywrightGreenVideoDownloader:
         logging.info("         下载链接")
         logging.info(separator)
 
-        for i, download in enumerate(result["downloads"], 1):
+        for _i, download in enumerate(result["downloads"], 1):
             logging.info(f"  类型: {download['file_type']}")
             logging.info(f"  URL: {download['url']}")
 
