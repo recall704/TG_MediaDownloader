@@ -27,7 +27,7 @@ class ConfigManager:
                         logging.info("Config file loaded successfully!")
                         return self._config
                     else:
-                        logging.error(f"Unable to load config file, it seems invalid!")
+                        logging.error("Unable to load config file, it seems invalid!")
                 except JSONDecodeError as error:
                     logging.error(f"Unable to parse config file, error:\n {error.msg}")
         else:
@@ -93,7 +93,7 @@ class ConfigManager:
             prev: str = self._config.TG_DOWNLOAD_PATH
             self._config.TG_DOWNLOAD_PATH = download_path
             if self.save_config_to_file():
-                logging.info(f"Change success!")
+                logging.info("Change success!")
                 return True
             else:
                 self._config.TG_DOWNLOAD_PATH = prev
@@ -106,7 +106,7 @@ class ConfigManager:
                 logging.info(f"Changing max parallels downloads to {max_int}")
                 self._config.TG_MAX_PARALLEL = max_int
             if self.save_config_to_file():
-                logging.info(f"Change success!")
+                logging.info("Change success!")
                 return True
         except Exception:
             return False

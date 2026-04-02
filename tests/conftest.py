@@ -2,11 +2,9 @@
 Pytest fixtures for TG Media Downloader tests.
 """
 
-import asyncio
-import os
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pyrogram.enums import MessageMediaType
