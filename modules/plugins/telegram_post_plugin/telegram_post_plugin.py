@@ -10,7 +10,7 @@ import os
 import time
 from urllib.parse import urlparse
 
-from pyrogram import Client
+from pyrogram.client import Client
 from pyrogram.errors import (
     ChannelInvalid,
     FloodWait,
@@ -109,9 +109,7 @@ class TelegramPostVideoPlugin(BasePlugin):
             path_parts = parsed.path.strip("/").split("/")
 
             if len(path_parts) < 2 or path_parts[0] == "c":
-                await self._safe_edit(
-                    reply, "❌ 仅支持公开频道链接，私有频道链接无法访问"
-                )
+                await self._safe_edit(reply, "❌ 仅支持公开频道链接，私有频道链接无法访问")
                 return
 
             username = path_parts[0]
@@ -131,16 +129,15 @@ class TelegramPostVideoPlugin(BasePlugin):
 
             video = msg.video
             file_name = video.file_name or f"{video.file_unique_id}.mp4"
-            file_path = os.path.join(
-                self._config_manager.get_config().TG_DOWNLOAD_PATH, file_name
-            )
+            file_path = os.path.join(self._config_manager.get_config().TG_DOWNLOAD_PATH, file_name)
 
             await self._safe_edit(
-                reply, f"📥 开始下载视频: {file_name}\nDownloading: 0%"
+                reply,
+                f"📥 开始下载视频: \nFilename: {file_name}\nDownloading: 0%\nFileSize: {format_size(video.file_size)}",
             )
 
             start_time = time.time()
-            progress_state: list[Message | int] = [reply, 0]
+            progress_state: list[Message | int | str | float] = [reply, 0, file_name, start_time]
             await msg.download(
                 file_name=file_path,
                 progress=self._progress_callback,
@@ -167,9 +164,7 @@ class TelegramPostVideoPlugin(BasePlugin):
             await self._safe_edit(reply, "Aborted")
             raise
         except (ValueError, IndexError):
-            await self._safe_edit(
-                reply, "❌ 链接格式不正确，请使用 https://t.me/username/post_id 格式"
-            )
+            await self._safe_edit(reply, "❌ 链接格式不正确，请使用 https://t.me/username/post_id 格式")
         except UsernameNotOccupied:
             await self._safe_edit(reply, "❌ 频道不存在或用户名无效")
         except ChannelInvalid:
@@ -180,20 +175,16 @@ class TelegramPostVideoPlugin(BasePlugin):
             await self._safe_edit(reply, f"❌ 下载失败: {str(e)}")
             import traceback
 
-            logging.error(
-                f"Error downloading telegram post video: {e}, {traceback.format_exc()}"
-            )
+            logging.error(f"Error downloading telegram post video: {e}, {traceback.format_exc()}")
 
     @staticmethod
-    async def _progress_callback(
-        current: int, total: int, reply: list[Message | int]
-    ) -> None:
+    async def _progress_callback(current: int, total: int, reply: list[Message | int | str | float]) -> None:
         """
         Update download progress on the reply message.
 
         :param current: Current bytes downloaded
         :param total: Total bytes to download
-        :param reply: List containing [message, last_reported_status] (mutable for updates)
+        :param reply: List containing [message, last_reported_status, file_name, start_time]
         """
         from modules.helpers import safe_edit_message
 
@@ -213,8 +204,15 @@ class TelegramPostVideoPlugin(BasePlugin):
         if not isinstance(message, Message) or message.text is None:
             return
 
+        file_name = reply[2] if len(reply) > 2 else "Unknown"
+        start_time = reply[3] if len(reply) > 3 and isinstance(reply[3], (int, float)) else time.time()
+        elapsed = time.time() - start_time
+        elapsed_str = format_duration(elapsed)
+
         try:
-            result = await safe_edit_message(message, f"Downloading: {status}%")
+            result = await safe_edit_message(
+                message, f"📥 Downloading: {file_name}\nProgress: {status}%\nElapsed: {elapsed_str}"
+            )
             if result:
                 reply[0] = result
                 if len(reply) > 1:

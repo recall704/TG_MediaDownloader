@@ -19,6 +19,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "basedpyright>=1.39.0",
     "watchfiles>=1.0.0",
 ]
 
@@ -49,7 +50,10 @@ testpaths = ["tests"]
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
-# Optional but useful:
-pythonVersion = "3.12"   # or whatever your venv uses
-typeCheckingMode = "basic"   # or "standard" / "strict"
-exclude = [".venv", "__pycache__", "build"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+exclude = [".venv", "__pycache__", "build", ".trellis"]
+executionEnvironments = [{ pythonPath = "${workspaceFolder}/.venv/bin/python3" }]
+
+[tool.pyright.languageServer]
+BasedPyright = { pythonPath = "${workspaceFolder}/.venv/bin/python3", args = ["${workspaceFolder}/.venv/bin/basedpyright-langserver"] }
