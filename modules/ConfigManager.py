@@ -31,7 +31,9 @@ class ConfigManager:
                 except JSONDecodeError as error:
                     logging.error(f"Unable to parse config file, error:\n {error.msg}")
         else:
-            logging.error("Unable to locate config file because it do not exists or it is not a json file!\nAdd json file or add env varibles to docker.")
+            logging.error(
+                "Unable to locate config file because it do not exists or it is not a json file!\nAdd json file or add env varibles to docker."
+            )
         return None
 
     def load_config(self, config: ConfigFile) -> None:
@@ -69,8 +71,13 @@ class ConfigManager:
         :param config: A ConfigFile instance
         :return: True if the instance is valid, False otherwise
         """
-        if not config.TG_SESSION or not config.TG_API_HASH or not config.TG_AUTHORIZED_USER_ID \
-                or not config.TG_BOT_TOKEN or not config.TG_DOWNLOAD_PATH:
+        if (
+            not config.TG_SESSION
+            or not config.TG_API_HASH
+            or not config.TG_AUTHORIZED_USER_ID
+            or not config.TG_BOT_TOKEN
+            or not config.TG_DOWNLOAD_PATH
+        ):
             return False
         return self._validate_download_path(Path(config.TG_DOWNLOAD_PATH))
 
@@ -108,4 +115,3 @@ class ConfigManager:
                 return True
         except Exception:
             return False
-

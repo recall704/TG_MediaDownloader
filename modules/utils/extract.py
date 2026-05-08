@@ -79,9 +79,7 @@ def main():
 
     parser.add_argument("text", nargs="?", help="包含 URL 的字符串")
 
-    parser.add_argument(
-        "-t", "--text", dest="text_alt", help="包含 URL 的字符串（替代位置参数）"
-    )
+    parser.add_argument("-t", "--text", dest="text_alt", help="包含 URL 的字符串（替代位置参数）")
 
     args = parser.parse_args()
 
